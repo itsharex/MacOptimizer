@@ -1,0 +1,272 @@
+[0;34m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[0m
+[0;34m    Mac优化大师 (MacOptimizer) 构建脚本[0m
+[0;34m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[0m
+
+[1;33m[1/5] 检查源文件...[0m
+[0;32m✓ 所有源文件存在[0m
+[1;33m[2/5] 准备构建目录...[0m
+[0;32m✓ 构建目录已创建[0m
+[1;33m[3/5] 复制配置文件...[0m
+[0;32m✓ Info.plist 和 AppIcon.icns 已复制[0m
+[1;33m[4/5] 编译 Swift 源代码...[0m
+AppUninstaller/AppScanner.swift:51:20: warning: reference to captured var 'scannedApps' in concurrently-executing code; this is an error in the Swift 6 language mode
+ 49 |         
+ 50 |         await MainActor.run {
+ 51 |             apps = scannedApps
+    |                    `- warning: reference to captured var 'scannedApps' in concurrently-executing code; this is an error in the Swift 6 language mode
+ 52 |             isScanning = false
+ 53 |         }
+
+AppUninstaller/AppScanner.swift:104:32: warning: conformance of 'NSImage' to 'Sendable' is unavailable; this is an error in the Swift 6 language mode
+102 |         
+103 |         // 使用NSWorkspace获取图标
+104 |         return await MainActor.run {
+    |                                `- warning: conformance of 'NSImage' to 'Sendable' is unavailable; this is an error in the Swift 6 language mode
+105 |             NSWorkspace.shared.icon(forFile: url.path)
+106 |         }
+
+:1:1: note: conformance of 'NSImage' to 'Sendable' has been explicitly marked unavailable here
+1 | @_nonSendable(_assumed)
+  | `- note: conformance of 'NSImage' to 'Sendable' has been explicitly marked unavailable here
+
+AppUninstaller/Styles.swift:288:15: error: type 'AppModule' has no member 'malware'
+286 |         case .fileExplorer: return BackgroundStyles.fileExplorer
+287 |         case .trash: return BackgroundStyles.trash
+288 |         case .malware: return BackgroundStyles.malware
+    |               `- error: type 'AppModule' has no member 'malware'
+289 |         case .smartClean: return BackgroundStyles.smartClean
+290 |         }
+
+AppUninstaller/Styles.swift:288:48: error: type 'BackgroundStyles' has no member 'malware'
+286 |         case .fileExplorer: return BackgroundStyles.fileExplorer
+287 |         case .trash: return BackgroundStyles.trash
+288 |         case .malware: return BackgroundStyles.malware
+    |                                                `- error: type 'BackgroundStyles' has no member 'malware'
+289 |         case .smartClean: return BackgroundStyles.smartClean
+290 |         }
+
+AppUninstaller/LargeFileView.swift:288:43: warning: 'icon(forFileType:)' was deprecated in macOS 12.0: Use -[NSWorkspace iconForContentType:] instead.
+286 |     
+287 |     var body: some View {
+288 |         Image(nsImage: NSWorkspace.shared.icon(forFileType: (filename as NSString).pathExtension))
+    |                                           `- warning: 'icon(forFileType:)' was deprecated in macOS 12.0: Use -[NSWorkspace iconForContentType:] instead.
+289 |             .resizable()
+290 |     }
+
+AppUninstaller/DeepCleanScanner.swift:184:25: warning: reference to captured var 'total' in concurrently-executing code; this is an error in the Swift 6 language mode
+182 |         await MainActor.run {
+183 |             orphanedItems = sortedItems
+184 |             totalSize = total
+    |                         `- warning: reference to captured var 'total' in concurrently-executing code; this is an error in the Swift 6 language mode
+185 |             isScanning = false
+186 |             scanProgress = ""
+
+AppUninstaller/SystemMonitorService.swift:72:21: warning: variable 'pagesFree' was written to, but never read
+ 70 |                 let lines = output.components(separatedBy: "\n")
+ 71 |                 var pageSize: UInt64 = 4096 // Default
+ 72 |                 var pagesFree: UInt64 = 0
+    |                     `- warning: variable 'pagesFree' was written to, but never read
+ 73 |                 var pagesActive: UInt64 = 0
+ 74 |                 var pagesInactive: UInt64 = 0
+
+AppUninstaller/SystemMonitorService.swift:74:21: warning: variable 'pagesInactive' was written to, but never read
+ 72 |                 var pagesFree: UInt64 = 0
+ 73 |                 var pagesActive: UInt64 = 0
+ 74 |                 var pagesInactive: UInt64 = 0
+    |                     `- warning: variable 'pagesInactive' was written to, but never read
+ 75 |                 var pagesSpeculative: UInt64 = 0
+ 76 |                 var pagesWired: UInt64 = 0
+
+AppUninstaller/SystemMonitorService.swift:75:21: warning: variable 'pagesSpeculative' was written to, but never read
+ 73 |                 var pagesActive: UInt64 = 0
+ 74 |                 var pagesInactive: UInt64 = 0
+ 75 |                 var pagesSpeculative: UInt64 = 0
+    |                     `- warning: variable 'pagesSpeculative' was written to, but never read
+ 76 |                 var pagesWired: UInt64 = 0
+ 77 |                 var pagesCompressed: UInt64 = 0
+
+AppUninstaller/PortScannerService.swift:139:34: warning: reference to captured var 'items' in concurrently-executing code; this is an error in the Swift 6 language mode
+137 |                 
+138 |                 await MainActor.run {
+139 |                     self.ports = items
+    |                                  `- warning: reference to captured var 'items' in concurrently-executing code; this is an error in the Swift 6 language mode
+140 |                     self.isScanning = false
+141 |                 }
+
+AppUninstaller/JunkCleaner.swift:206:30: warning: reference to captured var 'items' in concurrently-executing code; this is an error in the Swift 6 language mode
+204 |         
+205 |         await MainActor.run {
+206 |             self.junkItems = items
+    |                              `- warning: reference to captured var 'items' in concurrently-executing code; this is an error in the Swift 6 language mode
+207 |             isScanning = false
+208 |         }
+
+AppUninstaller/SystemOptimizer.swift:254:21: warning: initialization of immutable value 'result' was never used; consider replacing with assignment to '_' or removing it
+252 |                 message = result.success ? getSuccessMessage(for: type) : "执行失败: \(result.output)"
+253 |             } else {
+254 |                 let result = runCommand(type.command)
+    |                     `- warning: initialization of immutable value 'result' was never used; consider replacing with assignment to '_' or removing it
+255 |                 success = true
+256 |                 message = getSuccessMessage(for: type)
+
+AppUninstaller/SystemOptimizer.swift:262:34: warning: reference to captured var 'message' in concurrently-executing code; this is an error in the Swift 6 language mode
+260 |         await MainActor.run {
+261 |             isOptimizing = false
+262 |             optimizationResult = message
+    |                                  `- warning: reference to captured var 'message' in concurrently-executing code; this is an error in the Swift 6 language mode
+263 |         }
+264 |         
+
+AppUninstaller/MalwareScanner.swift:263:32: warning: reference to captured var 'currentStep' in concurrently-executing code; this is an error in the Swift 6 language mode
+261 |             currentStep += 1
+262 |             await MainActor.run {
+263 |                 scanProgress = currentStep / totalSteps
+    |                                `- warning: reference to captured var 'currentStep' in concurrently-executing code; this is an error in the Swift 6 language mode
+264 |                 currentScanPath = signature.name
+265 |             }
+
+AppUninstaller/MalwareScanner.swift:326:28: warning: reference to captured var 'uniqueThreats' in concurrently-executing code; this is an error in the Swift 6 language mode
+324 |         
+325 |         await MainActor.run {
+326 |             self.threats = uniqueThreats
+    |                            `- warning: reference to captured var 'uniqueThreats' in concurrently-executing code; this is an error in the Swift 6 language mode
+327 |             self.isScanning = false
+328 |             self.scanProgress = 1.0
+
+AppUninstaller/MalwareScanner.swift:344:32: warning: mutable capture of 'inout' parameter 'currentStep' is not allowed in concurrently-executing code; this is an error in the Swift 6 language mode
+342 |             currentStep += 1
+343 |             await MainActor.run {
+344 |                 scanProgress = currentStep / totalSteps
+    |                                `- warning: mutable capture of 'inout' parameter 'currentStep' is not allowed in concurrently-executing code; this is an error in the Swift 6 language mode
+345 |                 currentScanPath = dir
+346 |             }
+
+AppUninstaller/PrivacyScannerService.swift:101:13: warning: constant 'threats' inferred to have type '()', which may be unexpected
+ 99 |         
+100 |         // 2. 扫描恶意软件 (复用现有逻辑)
+101 |         let threats = malwareScanner.scan() // 假设这是同步的或我们可以包装成异步
+    |             |- warning: constant 'threats' inferred to have type '()', which may be unexpected
+    |             `- note: add an explicit type annotation to silence this warning
+102 |         // 这里需要适配 MalwareScanner 的结果到 PrivacyItem
+103 |         // 暂时我们简单处理，或者单独展示。为了统一列表，我们适配一下：
+
+AppUninstaller/PrivacyScannerService.swift:104:36: error: value of tuple type '()' has no member 'map'
+102 |         // 这里需要适配 MalwareScanner 的结果到 PrivacyItem
+103 |         // 暂时我们简单处理，或者单独展示。为了统一列表，我们适配一下：
+104 |         let malwareItems = threats.map { threat in
+    |                                    `- error: value of tuple type '()' has no member 'map'
+105 |             PrivacyItem(
+106 |                 browser: .system,
+
+AppUninstaller/PrivacyScannerService.swift:101:23: error: expression is 'async' but is not marked with 'await'
+ 99 |         
+100 |         // 2. 扫描恶意软件 (复用现有逻辑)
+101 |         let threats = malwareScanner.scan() // 假设这是同步的或我们可以包装成异步
+    |                       |- error: expression is 'async' but is not marked with 'await'
+    |                       `- note: call is 'async'
+102 |         // 这里需要适配 MalwareScanner 的结果到 PrivacyItem
+103 |         // 暂时我们简单处理，或者单独展示。为了统一列表，我们适配一下：
+
+AppUninstaller/PrivacyScannerService.swift:132:38: error: value of type 'MalwareScanner' has no member 'removeThreat'
+130 |                 if item.type == .malware {
+131 |                    // 特殊处理恶意软件
+132 |                    if malwareScanner.removeThreat(at: item.path.path) {
+    |                                      `- error: value of type 'MalwareScanner' has no member 'removeThreat'
+133 |                        cleaned += item.size
+134 |                    } else {
+
+AppUninstaller/SmartCleanerService.swift:120:44: warning: instance method 'makeIterator' is unavailable from asynchronous contexts; this is an error in the Swift 6 language mode; this is an error in the Swift 6 language mode
+118 |             guard let enumerator = fileManager.enumerator(at: dir, includingPropertiesForKeys: [.fileSizeKey, .isDirectoryKey]) else { continue }
+119 |             
+120 |             for case let fileURL as URL in enumerator {
+    |                                            `- warning: instance method 'makeIterator' is unavailable from asynchronous contexts; this is an error in the Swift 6 language mode; this is an error in the Swift 6 language mode
+121 |                 guard let values = try? fileURL.resourceValues(forKeys: [.fileSizeKey, .isDirectoryKey]),
+122 |                       let isDir = values.isDirectory, !isDir,
+
+AppUninstaller/SmartCleanerService.swift:142:43: warning: reference to captured var 'processedFiles' in concurrently-executing code; this is an error in the Swift 6 language mode
+140 |                 processedFiles += 1
+141 |                 await MainActor.run {
+142 |                     scanProgress = Double(processedFiles) / Double(max(totalFiles, 1))
+    |                                           `- warning: reference to captured var 'processedFiles' in concurrently-executing code; this is an error in the Swift 6 language mode
+143 |                     currentScanPath = url.lastPathComponent
+144 |                 }
+
+AppUninstaller/SmartCleanerService.swift:142:72: warning: reference to captured var 'totalFiles' in concurrently-executing code; this is an error in the Swift 6 language mode
+140 |                 processedFiles += 1
+141 |                 await MainActor.run {
+142 |                     scanProgress = Double(processedFiles) / Double(max(totalFiles, 1))
+    |                                                                        `- warning: reference to captured var 'totalFiles' in concurrently-executing code; this is an error in the Swift 6 language mode
+143 |                     currentScanPath = url.lastPathComponent
+144 |                 }
+
+AppUninstaller/SmartCleanerService.swift:192:44: warning: instance method 'makeIterator' is unavailable from asynchronous contexts; this is an error in the Swift 6 language mode; this is an error in the Swift 6 language mode
+190 |         // 收集所有图片
+191 |         if let enumerator = fileManager.enumerator(at: picturesDir, includingPropertiesForKeys: [.fileSizeKey]) {
+192 |             for case let fileURL as URL in enumerator {
+    |                                            `- warning: instance method 'makeIterator' is unavailable from asynchronous contexts; this is an error in the Swift 6 language mode; this is an error in the Swift 6 language mode
+193 |                 let ext = fileURL.pathExtension.lowercased()
+194 |                 if ["jpg", "jpeg", "png", "heic", "heif", "tiff"].contains(ext) {
+
+AppUninstaller/SmartCleanerService.swift:202:44: warning: instance method 'makeIterator' is unavailable from asynchronous contexts; this is an error in the Swift 6 language mode; this is an error in the Swift 6 language mode
+200 |         // 计算图片特征
+201 |         if let enumerator = fileManager.enumerator(at: picturesDir, includingPropertiesForKeys: [.fileSizeKey]) {
+202 |             for case let fileURL as URL in enumerator {
+    |                                            `- warning: instance method 'makeIterator' is unavailable from asynchronous contexts; this is an error in the Swift 6 language mode; this is an error in the Swift 6 language mode
+203 |                 let ext = fileURL.pathExtension.lowercased()
+204 |                 guard ["jpg", "jpeg", "png", "heic", "heif", "tiff"].contains(ext) else { continue }
+
+AppUninstaller/SmartCleanerService.swift:208:43: warning: reference to captured var 'processedCount' in concurrently-executing code; this is an error in the Swift 6 language mode
+206 |                 processedCount += 1
+207 |                 await MainActor.run {
+208 |                     scanProgress = Double(processedCount) / Double(max(totalCount, 1))
+    |                                           `- warning: reference to captured var 'processedCount' in concurrently-executing code; this is an error in the Swift 6 language mode
+209 |                     currentScanPath = fileURL.lastPathComponent
+210 |                 }
+
+AppUninstaller/SmartCleanerService.swift:208:72: warning: reference to captured var 'totalCount' in concurrently-executing code; this is an error in the Swift 6 language mode
+206 |                 processedCount += 1
+207 |                 await MainActor.run {
+208 |                     scanProgress = Double(processedCount) / Double(max(totalCount, 1))
+    |                                                                        `- warning: reference to captured var 'totalCount' in concurrently-executing code; this is an error in the Swift 6 language mode
+209 |                     currentScanPath = fileURL.lastPathComponent
+210 |                 }
+
+AppUninstaller/SmartCleanerService.swift:300:43: warning: reference to captured var 'processedApps' in concurrently-executing code; this is an error in the Swift 6 language mode
+298 |                 processedApps += 1
+299 |                 await MainActor.run {
+300 |                     scanProgress = Double(processedApps) / Double(max(totalApps, 1))
+    |                                           `- warning: reference to captured var 'processedApps' in concurrently-executing code; this is an error in the Swift 6 language mode
+301 |                     currentScanPath = app.lastPathComponent
+302 |                 }
+
+AppUninstaller/SmartCleanerService.swift:300:71: warning: reference to captured var 'totalApps' in concurrently-executing code; this is an error in the Swift 6 language mode
+298 |                 processedApps += 1
+299 |                 await MainActor.run {
+300 |                     scanProgress = Double(processedApps) / Double(max(totalApps, 1))
+    |                                                                       `- warning: reference to captured var 'totalApps' in concurrently-executing code; this is an error in the Swift 6 language mode
+301 |                     currentScanPath = app.lastPathComponent
+302 |                 }
+
+AppUninstaller/SmartCleanerService.swift:324:33: warning: reference to captured var 'items' in concurrently-executing code; this is an error in the Swift 6 language mode
+322 |         
+323 |         await MainActor.run {
+324 |             localizationFiles = items.sorted { $0.size > $1.size }
+    |                                 `- warning: reference to captured var 'items' in concurrently-executing code; this is an error in the Swift 6 language mode
+325 |             isScanning = false
+326 |             scanProgress = 1.0
+
+AppUninstaller/SmartCleanerService.swift:345:44: warning: instance method 'makeIterator' is unavailable from asynchronous contexts; this is an error in the Swift 6 language mode; this is an error in the Swift 6 language mode
+343 |         
+344 |         if let enumerator = fileManager.enumerator(at: homeDir, includingPropertiesForKeys: [.fileSizeKey, .isDirectoryKey]) {
+345 |             for case let fileURL as URL in enumerator {
+    |                                            `- warning: instance method 'makeIterator' is unavailable from asynchronous contexts; this is an error in the Swift 6 language mode; this is an error in the Swift 6 language mode
+346 |                 processedCount += 1
+347 |                 if processedCount % 100 == 0 {
+
+AppUninstaller/SmartCleanerService.swift:371:26: warning: reference to captured var 'items' in concurrently-executing code; this is an error in the Swift 6 language mode
+369 |         
+370 |         await MainActor.run {
+371 |             largeFiles = items.sorted { $0.size > $1.size }
+    |                          `- warning: reference to captured var 'items' in concurrently-executing code; this is an error in the Swift 6 language mode
+372 |             isScanning = false
+373 |             scanProgress = 1.0

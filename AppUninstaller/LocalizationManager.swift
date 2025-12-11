@@ -54,11 +54,13 @@ class LocalizationManager: ObservableObject {
         "monitor": [.chinese: "控制台", .english: "Console"],
         "uninstaller": [.chinese: "应用卸载", .english: "Uninstaller"],
         "deepClean": [.chinese: "深度清理", .english: "Deep Clean"],
-        "cleaner": [.chinese: "垃圾清理", .english: "Cleaner"],
+        "cleaner": [.chinese: "系统垃圾", .english: "System Junk"],
         "optimizer": [.chinese: "系统优化", .english: "Optimizer"],
         "largeFiles": [.chinese: "大文件查找", .english: "Large Files"],
         "fileExplorer": [.chinese: "文件管理", .english: "File Explorer"],
         "trash": [.chinese: "废纸篓", .english: "Trash"],
+        "privacy": [.chinese: "隐私保护", .english: "Privacy Protection"],
+        "smartClean": [.chinese: "智能扫描", .english: "Smart Scan"],
         
         // 模块描述
         "monitor_desc": [.chinese: "CPU、内存、网络端口实时监控", .english: "Real-time CPU, Memory, Network monitoring"],

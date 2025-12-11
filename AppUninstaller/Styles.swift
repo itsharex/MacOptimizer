@@ -71,9 +71,9 @@ struct GradientStyles {
         endPoint: .bottomTrailing
     )
     
-    // 6. 系统监控 (青色 - 数据/科技)
+    // 6. 控制台 (洋红/紫色 - 与背景协调)
     static let monitor = LinearGradient(
-        colors: [Color(red: 0.0, green: 0.5, blue: 0.5), Color(red: 0.0, green: 0.3, blue: 0.3)],
+        colors: [Color(red: 0.9, green: 0.2, blue: 0.6), Color(red: 0.6, green: 0.1, blue: 0.5)],
         startPoint: .topLeading,
         endPoint: .bottomTrailing
     )
@@ -92,6 +92,23 @@ struct GradientStyles {
         endPoint: .bottomTrailing
     )
     
+    // 9. 恶意软件扫描 (红色警告)
+    static let privacy = LinearGradient(
+        gradient: Gradient(colors: [
+            Color(red: 0.2, green: 0.0, blue: 0.0),
+            Color(red: 0.1, green: 0.0, blue: 0.0)
+        ]),
+        startPoint: .topLeading,
+        endPoint: .bottomTrailing
+    )
+    
+    // 10. 智能清理 (蓝绿色)
+    static let smartClean = LinearGradient(
+        colors: [Color(red: 0.0, green: 0.6, blue: 0.8), Color(red: 0.0, green: 0.4, blue: 0.6)],
+        startPoint: .topLeading,
+        endPoint: .bottomTrailing
+    )
+    
     // 侧边栏选中高亮
     static func sidebarSelected(for module: AppModule) -> LinearGradient {
         switch module {
@@ -103,6 +120,8 @@ struct GradientStyles {
         case .largeFiles: return largeFiles
         case .fileExplorer: return fileExplorer
         case .trash: return trash
+        case .privacy: return privacy
+        case .smartClean: return smartClean
         }
     }
 }
@@ -161,8 +180,8 @@ struct BackgroundStyles {
 
     static let monitor = LinearGradient(
         stops: [
-            .init(color: Color(red: 0.0, green: 0.2, blue: 0.2), location: 0.0), // Deep Teal
-            .init(color: Color(red: 0.0, green: 0.4, blue: 0.4), location: 1.0)  // Bright Teal
+            .init(color: Color(red: 0.8, green: 0.0, blue: 0.5), location: 0.0), // 洋红 (同系统垃圾)
+            .init(color: Color(red: 0.4, green: 0.0, blue: 0.4), location: 1.0)  // 深紫
         ],
         startPoint: .topLeading,
         endPoint: .bottomTrailing
@@ -187,18 +206,40 @@ struct BackgroundStyles {
         startPoint: .topLeading,
         endPoint: .bottomTrailing
     )
+    
+    // 8. 恶意软件扫描 (深红色警告)
+    static let privacy = LinearGradient(
+        stops: [
+            .init(color: Color(red: 0.4, green: 0.0, blue: 0.0), location: 0.0),
+            .init(color: Color(red: 0.2, green: 0.0, blue: 0.0), location: 1.0)
+        ],
+        startPoint: .topLeading,
+        endPoint: .bottomTrailing
+    )
+    
+    // 9. 智能清理 (蓝绿色)
+    static let smartClean = LinearGradient(
+        stops: [
+            .init(color: Color(red: 0.0, green: 0.4, blue: 0.5), location: 0.0),
+            .init(color: Color(red: 0.0, green: 0.25, blue: 0.35), location: 1.0)
+        ],
+        startPoint: .topLeading,
+        endPoint: .bottomTrailing
+    )
 }
 
 // MARK: - 模块枚举
 enum AppModule: String, CaseIterable, Identifiable {
     case monitor = "控制台"
-    case uninstaller = "应用卸载"
+    case smartClean = "智能扫描"
+    case cleaner = "系统垃圾"
     case deepClean = "深度清理"
-    case cleaner = "垃圾清理"
     case optimizer = "系统优化"
+    case privacy = "隐私保护"
     case largeFiles = "大文件查找"
-    case fileExplorer = "文件管理"
+    case uninstaller = "应用卸载"
     case trash = "废纸篓"
+    case fileExplorer = "文件管理"
     
     
     var id: String { rawValue }
@@ -213,6 +254,8 @@ enum AppModule: String, CaseIterable, Identifiable {
         case .largeFiles: return "magnifyingglass.circle.fill"
         case .fileExplorer: return "folder.fill"
         case .trash: return "trash.circle.fill"
+        case .privacy: return "hand.raised.fill"
+        case .smartClean: return "sparkles.rectangle.stack"
         }
     }
     
@@ -226,6 +269,9 @@ enum AppModule: String, CaseIterable, Identifiable {
         case .largeFiles: return GradientStyles.largeFiles
         case .fileExplorer: return GradientStyles.fileExplorer
         case .trash: return GradientStyles.trash
+        case .privacy:
+            return LinearGradient(colors: [.red, .orange], startPoint: .topLeading, endPoint: .bottomTrailing)
+        case .smartClean: return GradientStyles.smartClean
         }
     }
     
@@ -239,6 +285,8 @@ enum AppModule: String, CaseIterable, Identifiable {
         case .largeFiles: return BackgroundStyles.largeFiles
         case .fileExplorer: return BackgroundStyles.fileExplorer
         case .trash: return BackgroundStyles.trash
+        case .privacy: return BackgroundStyles.privacy
+        case .smartClean: return BackgroundStyles.smartClean
         }
     }
     
@@ -251,7 +299,10 @@ enum AppModule: String, CaseIterable, Identifiable {
         case .optimizer: return "管理启动项，释放内存"
         case .largeFiles: return "发现并清理占用空间的大文件"
         case .fileExplorer: return "浏览和管理磁盘文件"
-        case .trash: return "查看并清空废纸篓"
+        case .trash: return "查看并清空废纸篷"
+        case .privacy: return "保护您的隐私数据安全"
+
+        case .smartClean: return "一键扫描并清理系统垃圾"
         }
     }
 }

@@ -25,7 +25,7 @@ struct ContentView: View {
                             UninstallerMainView()
                                 .transition(.opacity.combined(with: .move(edge: .trailing)))
                         case .deepClean:
-                            DeepCleanView()
+                            DeepCleanView(selectedModule: $selectedModule)
                                 .transition(.opacity.combined(with: .move(edge: .trailing)))
                         case .cleaner:
                             JunkCleanerView()
@@ -34,7 +34,7 @@ struct ContentView: View {
                             OptimizerView()
                                 .transition(.opacity.combined(with: .move(edge: .trailing)))
                         case .largeFiles:
-                            LargeFileView()
+                            LargeFileView(selectedModule: $selectedModule)
                                 .transition(.opacity.combined(with: .move(edge: .trailing)))
                         case .fileExplorer:
                             FileExplorerView()
@@ -44,6 +44,12 @@ struct ContentView: View {
                                 .transition(.opacity.combined(with: .move(edge: .trailing)))
                         case .monitor:
                             MonitorView()
+                                .transition(.opacity.combined(with: .move(edge: .trailing)))
+                        case .privacy:
+                            PrivacyView(selectedModule: $selectedModule)
+                                .transition(.opacity.combined(with: .move(edge: .trailing)))
+                        case .smartClean:
+                            SmartCleanerView()
                                 .transition(.opacity.combined(with: .move(edge: .trailing)))
                         }
                     }

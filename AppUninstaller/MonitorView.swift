@@ -1,10 +1,17 @@
 import SwiftUI
 
+enum MonitorTab: String, CaseIterable {
+    case apps = "apps"
+    case background = "background"
+    case ports = "ports"
+}
+
 struct MonitorView: View {
     @StateObject private var systemService = SystemMonitorService()
     @StateObject private var processService = ProcessService()
+    @StateObject private var portService = PortScannerService()
     @ObservedObject private var loc = LocalizationManager.shared
-    @State private var showApps = true // Toggle between Apps and Background Tasks
+    @State private var selectedTab: MonitorTab = .apps
     
     var body: some View {
         VStack(spacing: 0) {
@@ -21,7 +28,7 @@ struct MonitorView: View {
                 Spacer()
                 
                 // Refresh Button
-                Button(action: { Task { await processService.scanProcesses(showApps: showApps) } }) {
+                Button(action: { refreshCurrentTab() }) {
                     Image(systemName: "arrow.clockwise")
                         .foregroundColor(.white.opacity(0.7))
                         .padding(8)
@@ -60,108 +67,52 @@ struct MonitorView: View {
                         .frame(height: 140)
                     }
 
-                    // Process Manager Section
+                    // Process/Port Manager Section
                     VStack(alignment: .leading, spacing: 16) {
                         // Section Header & Tabs
                         HStack(spacing: 16) {
-                            Button(action: { 
-                                showApps = true 
+                            // 运行中应用 Tab
+                            TabButton(
+                                title: loc.currentLanguage == .chinese ? "运行中应用" : "Apps",
+                                isSelected: selectedTab == .apps
+                            ) {
+                                selectedTab = .apps
                                 Task { await processService.scanProcesses(showApps: true) }
-                            }) {
-                                Text(loc.currentLanguage == .chinese ? "运行中应用" : "Running Apps")
-                                    .fontWeight(.semibold)
-                                    .foregroundColor(showApps ? .white : .white.opacity(0.5))
-                                    .padding(.bottom, 4)
-                                    .overlay(
-                                        Rectangle()
-                                            .fill(showApps ? Color.blue : Color.clear)
-                                            .frame(height: 2)
-                                            .offset(y: 4),
-                                        alignment: .bottom
-                                    )
                             }
-                            .buttonStyle(.plain)
                             
-                            Button(action: { 
-                                showApps = false 
+                            // 后台进程 Tab
+                            TabButton(
+                                title: loc.currentLanguage == .chinese ? "后台进程" : "Background",
+                                isSelected: selectedTab == .background
+                            ) {
+                                selectedTab = .background
                                 Task { await processService.scanProcesses(showApps: false) }
-                            }) {
-                                Text(loc.currentLanguage == .chinese ? "后台进程" : "Background")
-                                    .fontWeight(.semibold)
-                                    .foregroundColor(!showApps ? .white : .white.opacity(0.5))
-                                    .padding(.bottom, 4)
-                                    .overlay(
-                                        Rectangle()
-                                            .fill(!showApps ? Color.blue : Color.clear)
-                                            .frame(height: 2)
-                                            .offset(y: 4),
-                                        alignment: .bottom
-                                    )
                             }
-                            .buttonStyle(.plain)
+                            
+                            // 端口 Tab
+                            TabButton(
+                                title: loc.currentLanguage == .chinese ? "端口" : "Ports",
+                                isSelected: selectedTab == .ports
+                            ) {
+                                selectedTab = .ports
+                                Task { await portService.scanPorts() }
+                            }
                             
                             Spacer()
                             
-                            Text(loc.currentLanguage == .chinese ? "共 \(processService.processes.count) 个进程" : "\(processService.processes.count) processes")
+                            // 计数显示
+                            Text(countText)
                                 .font(.caption)
                                 .foregroundColor(.secondaryText)
                         }
                         
-                        // Process List
-                        VStack(spacing: 1) {
-                            if processService.isScanning {
-                                HStack {
-                                    Spacer()
-                                    ProgressView().scaleEffect(0.6)
-                                    Spacer()
-                                }
-                                .padding(20)
-                            } else {
-                                ForEach(processService.processes) { item in
-                                    HStack {
-                                        if let icon = item.icon {
-                                            Image(nsImage: icon)
-                                                .resizable()
-                                                .frame(width: 24, height: 24)
-                                        } else {
-                                            Image(systemName: "gearshape")
-                                                .foregroundColor(.secondaryText)
-                                                .frame(width: 24, height: 24)
-                                        }
-                                        
-                                        VStack(alignment: .leading) {
-                                            Text(item.name)
-                                                .font(.system(size: 13, weight: .medium))
-                                                .foregroundColor(.white)
-                                            Text("PID: \(item.formattedPID)")
-                                                .font(.caption)
-                                                .foregroundColor(.white.opacity(0.4))
-                                        }
-                                        
-                                        Spacer()
-                                        
-                                        // Stop Button
-                                        Button(action: { processService.terminateProcess(item) }) {
-                                            Image(systemName: "xmark.circle.fill")
-                                                .foregroundColor(.red.opacity(0.8))
-                                        }
-                                        .buttonStyle(.plain)
-                                        .help(loc.L("stop_process"))
-                                    }
-                                    .padding(12)
-                                    .background(Color.white.opacity(0.02))
-                                }
-                                
-                                if processService.processes.isEmpty {
-                                    Text("无相关进程")
-                                        .foregroundColor(.secondaryText)
-                                        .padding(20)
-                                        .frame(maxWidth: .infinity)
-                                }
-                            }
+                        // Content based on selected tab
+                        switch selectedTab {
+                        case .apps, .background:
+                            processListView
+                        case .ports:
+                            portListView
                         }
-                        .background(Color.black.opacity(0.2))
-                        .cornerRadius(8)
                     }
                 }
                 .padding(.horizontal, 32)
@@ -170,11 +121,240 @@ struct MonitorView: View {
         }
         .onAppear {
             systemService.startMonitoring()
-            Task { await processService.scanProcesses(showApps: showApps) }
+            Task { await processService.scanProcesses(showApps: true) }
         }
         .onDisappear {
             systemService.stopMonitoring()
         }
+    }
+    
+    // MARK: - Helper Properties
+    
+    private var countText: String {
+        switch selectedTab {
+        case .apps, .background:
+            return loc.currentLanguage == .chinese ? "共 \(processService.processes.count) 个进程" : "\(processService.processes.count) processes"
+        case .ports:
+            return loc.currentLanguage == .chinese ? "共 \(portService.ports.count) 个端口" : "\(portService.ports.count) ports"
+        }
+    }
+    
+    private func refreshCurrentTab() {
+        Task {
+            switch selectedTab {
+            case .apps:
+                await processService.scanProcesses(showApps: true)
+            case .background:
+                await processService.scanProcesses(showApps: false)
+            case .ports:
+                await portService.scanPorts()
+            }
+        }
+    }
+    
+    // MARK: - Process List View
+    
+    private var processListView: some View {
+        VStack(spacing: 1) {
+            if processService.isScanning {
+                HStack {
+                    Spacer()
+                    ProgressView().scaleEffect(0.6)
+                    Spacer()
+                }
+                .padding(20)
+            } else {
+                ForEach(processService.processes) { item in
+                    HStack {
+                        if let icon = item.icon {
+                            Image(nsImage: icon)
+                                .resizable()
+                                .frame(width: 24, height: 24)
+                        } else {
+                            Image(systemName: "gearshape")
+                                .foregroundColor(.secondaryText)
+                                .frame(width: 24, height: 24)
+                        }
+                        
+                        VStack(alignment: .leading) {
+                            Text(item.name)
+                                .font(.system(size: 13, weight: .medium))
+                                .foregroundColor(.white)
+                            Text("PID: \(item.formattedPID)")
+                                .font(.caption)
+                                .foregroundColor(.white.opacity(0.4))
+                        }
+                        
+                        Spacer()
+                        
+                        // Stop Button
+                        Button(action: { processService.terminateProcess(item) }) {
+                            Image(systemName: "xmark.circle.fill")
+                                .foregroundColor(.red.opacity(0.8))
+                        }
+                        .buttonStyle(.plain)
+                        .help(loc.L("stop_process"))
+                    }
+                    .padding(12)
+                    .background(Color.white.opacity(0.02))
+                }
+                
+                if processService.processes.isEmpty {
+                    Text(loc.currentLanguage == .chinese ? "无相关进程" : "No processes")
+                        .foregroundColor(.secondaryText)
+                        .padding(20)
+                        .frame(maxWidth: .infinity)
+                }
+            }
+        }
+        .background(Color.black.opacity(0.2))
+        .cornerRadius(8)
+    }
+    
+    // MARK: - Port List View
+    
+    private var portListView: some View {
+        VStack(spacing: 0) {
+            if portService.isScanning {
+                HStack {
+                    Spacer()
+                    ProgressView().scaleEffect(0.6)
+                    Spacer()
+                }
+                .padding(20)
+            } else {
+                // Header Row
+                HStack {
+                    Text(loc.currentLanguage == .chinese ? "程序" : "Process")
+                        .frame(width: 120, alignment: .leading)
+                    Text("PID")
+                        .frame(width: 60, alignment: .leading)
+                    Text(loc.currentLanguage == .chinese ? "端口" : "Port")
+                        .frame(width: 80, alignment: .leading)
+                    Text(loc.currentLanguage == .chinese ? "协议" : "Protocol")
+                        .frame(width: 60, alignment: .leading)
+                    Text(loc.currentLanguage == .chinese ? "状态" : "Status")
+                        .frame(width: 100, alignment: .leading)
+                    Spacer()
+                    Text(loc.currentLanguage == .chinese ? "操作" : "Action")
+                        .frame(width: 60)
+                }
+                .font(.caption)
+                .foregroundColor(.secondaryText)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(Color.white.opacity(0.05))
+                
+                // Port Rows
+                ForEach(portService.ports) { port in
+                    HStack {
+                        // Process Name with Icon
+                        HStack(spacing: 6) {
+                            if let icon = port.icon {
+                                Image(nsImage: icon)
+                                    .resizable()
+                                    .frame(width: 18, height: 18)
+                            } else {
+                                Image(systemName: "network")
+                                    .foregroundColor(.cyan)
+                                    .frame(width: 18, height: 18)
+                            }
+                            Text(port.displayName)
+                                .lineLimit(1)
+                        }
+                        .frame(width: 120, alignment: .leading)
+                        
+                        // PID
+                        Text(String(port.pid))
+                            .frame(width: 60, alignment: .leading)
+                            .foregroundColor(.white.opacity(0.7))
+                        
+                        // Port Number
+                        Text(port.portString)
+                            .frame(width: 80, alignment: .leading)
+                            .foregroundColor(.cyan)
+                            .fontWeight(.medium)
+                        
+                        // Protocol
+                        Text(port.protocol)
+                            .frame(width: 60, alignment: .leading)
+                            .foregroundColor(.white.opacity(0.7))
+                        
+                        // Status
+                        HStack(spacing: 4) {
+                            Circle()
+                                .fill(port.state == "LISTEN" ? Color.green : Color.orange)
+                                .frame(width: 6, height: 6)
+                            Text(port.state.isEmpty ? "-" : port.state)
+                        }
+                        .frame(width: 100, alignment: .leading)
+                        .foregroundColor(.white.opacity(0.7))
+                        
+                        Spacer()
+                        
+                        // Stop Button
+                        Button(action: { portService.terminateProcess(port) }) {
+                            HStack(spacing: 4) {
+                                Image(systemName: "stop.circle.fill")
+                                Text(loc.currentLanguage == .chinese ? "停止" : "Stop")
+                            }
+                            .font(.caption)
+                            .foregroundColor(.red.opacity(0.9))
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(Color.red.opacity(0.15))
+                            .cornerRadius(4)
+                        }
+                        .buttonStyle(.plain)
+                        .frame(width: 60)
+                    }
+                    .font(.system(size: 12))
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 10)
+                    .background(Color.white.opacity(0.02))
+                }
+                
+                if portService.ports.isEmpty {
+                    VStack(spacing: 8) {
+                        Image(systemName: "network.slash")
+                            .font(.system(size: 32))
+                            .foregroundColor(.white.opacity(0.3))
+                        Text(loc.currentLanguage == .chinese ? "没有检测到监听端口" : "No listening ports detected")
+                            .foregroundColor(.secondaryText)
+                    }
+                    .padding(40)
+                    .frame(maxWidth: .infinity)
+                }
+            }
+        }
+        .background(Color.black.opacity(0.2))
+        .cornerRadius(8)
+    }
+}
+
+// MARK: - Tab Button Component
+
+struct TabButton: View {
+    let title: String
+    let isSelected: Bool
+    let action: () -> Void
+    
+    var body: some View {
+        Button(action: action) {
+            Text(title)
+                .fontWeight(.semibold)
+                .foregroundColor(isSelected ? .white : .white.opacity(0.5))
+                .padding(.bottom, 4)
+                .overlay(
+                    Rectangle()
+                        .fill(isSelected ? Color.blue : Color.clear)
+                        .frame(height: 2)
+                        .offset(y: 4),
+                    alignment: .bottom
+                )
+        }
+        .buttonStyle(.plain)
     }
 }
 

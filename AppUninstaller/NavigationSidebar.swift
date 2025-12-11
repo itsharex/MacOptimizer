@@ -107,6 +107,8 @@ struct SidebarButton: View {
         case .largeFiles: return localization.L("largeFiles")
         case .fileExplorer: return localization.L("fileExplorer")
         case .trash: return localization.L("trash")
+        case .privacy: return localization.L("privacy")
+        case .smartClean: return localization.L("smartClean")
         }
     }
     
