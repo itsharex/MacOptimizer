@@ -49,6 +49,7 @@ SWIFT_FILES=(
     "${SOURCE_DIR}/FileExplorerView.swift"
     "${SOURCE_DIR}/SystemMonitorService.swift"
     "${SOURCE_DIR}/ProcessService.swift"
+    "${SOURCE_DIR}/PortScannerService.swift"
     "${SOURCE_DIR}/MonitorView.swift"
     "${SOURCE_DIR}/ContentView.swift"
     "${SOURCE_DIR}/AppDetailView.swift"
@@ -57,6 +58,12 @@ SWIFT_FILES=(
     "${SOURCE_DIR}/JunkCleanerView.swift"
     "${SOURCE_DIR}/SystemOptimizer.swift"
     "${SOURCE_DIR}/OptimizerView.swift"
+    "${SOURCE_DIR}/MalwareScanner.swift"
+    "${SOURCE_DIR}/MalwareView.swift"
+    "${SOURCE_DIR}/PrivacyScannerService.swift"
+    "${SOURCE_DIR}/PrivacyView.swift"
+    "${SOURCE_DIR}/SmartCleanerService.swift"
+    "${SOURCE_DIR}/SmartCleanerView.swift"
     "${SOURCE_DIR}/AppUninstallerApp.swift"
 )
 
