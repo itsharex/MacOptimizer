@@ -89,20 +89,20 @@ Mac优化大师是一款专为 macOS 设计的系统优化工具,采用现代化
 
 ## 📸 界面预览
 
-应用采用类似 **CleanMyMac X** 的现代化深色主题设计,每个功能模块都有独特的渐变色背景:
+ 部分功能截图
+ ![alt text](image.png)
 
-| 模块 | 配色风格 |
-|:---:|:---:|
-| 控制台 | 青色 (科技感) |
-| 应用卸载 | 蓝色 (智能/冷静) |
-| 深度清理 | 翡翠绿 (深度/精准) |
-| 垃圾清理 | 紫色 (深度/清理) |
-| 系统优化 | 橙色 (活力/加速) |
-| 大文件查找 | 深紫色 (探索/宇宙) |
-| 文件管理 | 钢蓝色 (专业/稳定) |
-| 废纸篓 | 红色 (删除/清理) |
+ ![alt text](image-1.png)
 
----
+
+![alt text](image-2.png)
+
+![alt text](image-3.png)
+
+![alt text](image-4.png)
+
+![alt text](image-5.png)
+
 
 ## 🛠️ 安装与构建
 
@@ -115,7 +115,7 @@ Mac优化大师是一款专为 macOS 设计的系统优化工具,采用现代化
 
 ```bash
 # 1. 克隆仓库
-git clone https://github.com/your-username/MacOptimizer.git
+git clone https://github.com/ddlmanus/MacOptimizer.git
 cd MacOptimizer
 
 # 2. 运行构建脚本
