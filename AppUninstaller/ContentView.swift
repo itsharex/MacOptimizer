@@ -49,7 +49,7 @@ struct ContentView: View {
                             PrivacyView(selectedModule: $selectedModule)
                                 .transition(.opacity.combined(with: .move(edge: .trailing)))
                         case .smartClean:
-                            SmartCleanerView()
+                            SmartCleanerView(selectedModule: $selectedModule)
                                 .transition(.opacity.combined(with: .move(edge: .trailing)))
                         }
                     }

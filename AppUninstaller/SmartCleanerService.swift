@@ -248,6 +248,52 @@ class SmartCleanerService: ObservableObject {
         }
     }
     
+    // MARK: - 切换文件选择状态
+    @MainActor
+    func toggleFileSelection(file: CleanerFileItem, in category: CleanerCategory) {
+        switch category {
+        case .systemCache:
+            if let idx = systemCacheFiles.firstIndex(where: { $0.url == file.url }) {
+                systemCacheFiles[idx].isSelected.toggle()
+            }
+        case .oldUpdates:
+            if let idx = oldUpdateFiles.firstIndex(where: { $0.url == file.url }) {
+                oldUpdateFiles[idx].isSelected.toggle()
+            }
+        case .userCache:
+            if let idx = userCacheFiles.firstIndex(where: { $0.url == file.url }) {
+                userCacheFiles[idx].isSelected.toggle()
+            }
+        case .languageFiles:
+            if let idx = languageFiles.firstIndex(where: { $0.url == file.url }) {
+                languageFiles[idx].isSelected.toggle()
+            }
+        case .systemLogs:
+            if let idx = systemLogFiles.firstIndex(where: { $0.url == file.url }) {
+                systemLogFiles[idx].isSelected.toggle()
+            }
+        case .userLogs:
+            if let idx = userLogFiles.firstIndex(where: { $0.url == file.url }) {
+                userLogFiles[idx].isSelected.toggle()
+            }
+        case .brokenLoginItems:
+            if let idx = brokenLoginItems.firstIndex(where: { $0.url == file.url }) {
+                brokenLoginItems[idx].isSelected.toggle()
+            }
+        case .localizations:
+            if let idx = localizationFiles.firstIndex(where: { $0.url == file.url }) {
+                localizationFiles[idx].isSelected.toggle()
+            }
+        case .largeFiles:
+            if let idx = largeFiles.firstIndex(where: { $0.url == file.url }) {
+                largeFiles[idx].isSelected.toggle()
+            }
+        case .systemJunk, .duplicates, .similarPhotos:
+            // 这些是复合分类，不直接切换
+            break
+        }
+    }
+    
     // MARK: - 扫描系统垃圾
     func scanSystemJunk() async {
         await MainActor.run {
@@ -1991,11 +2037,12 @@ class SmartCleanerService: ObservableObject {
         }
     }
     
-    // 总可清理大小
+    // 总可清理大小（包括选中的大文件）
     var totalCleanableSize: Int64 {
         let dupSize = duplicateGroups.reduce(0) { $0 + $1.wastedSize }
         let photoSize = similarPhotoGroups.reduce(0) { $0 + $1.wastedSize }
-        let locSize = localizationFiles.reduce(0) { $0 + $1.size }
-        return dupSize + photoSize + locSize
+        let locSize = localizationFiles.filter { $0.isSelected }.reduce(0) { $0 + $1.size }
+        let largeSize = largeFiles.filter { $0.isSelected }.reduce(0) { $0 + $1.size }
+        return dupSize + photoSize + locSize + largeSize
     }
 }

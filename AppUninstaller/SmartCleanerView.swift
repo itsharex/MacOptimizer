@@ -10,6 +10,9 @@ enum ScanState {
 }
 
 struct SmartCleanerView: View {
+    // 导航绑定 - 用于跳转到其他页面
+    @Binding var selectedModule: AppModule
+    
     // 使用共享的服务管理器，切换视图时扫描状态不会丢失
     @ObservedObject private var service = ScanServiceManager.shared.smartCleanerService
     @ObservedObject private var loc = LocalizationManager.shared
@@ -59,7 +62,7 @@ struct SmartCleanerView: View {
     private var totalScannedSize: Int64 {
         // 只计算顶级类别，不包括 systemJunk 的子类别
         let topLevelCategories: [CleanerCategory] = [
-            .systemJunk, .duplicates, .similarPhotos, .localizations, .largeFiles
+            .systemJunk, .duplicates, .similarPhotos, .largeFiles
         ]
         return topLevelCategories.reduce(0) { $0 + service.sizeFor(category: $1) }
     }
@@ -224,10 +227,10 @@ struct SmartCleanerView: View {
                 .foregroundColor(.white)
                 .padding(.bottom, 40)
             
-            // 真实扫描任务列表
+            // 真实扫描任务列表（多语言文件扫描已禁用）
             VStack(alignment: .leading, spacing: 20) {
-                // 定义显示顺序
-                let categories: [CleanerCategory] = [.systemJunk, .duplicates, .similarPhotos, .localizations, .largeFiles]
+                // 定义显示顺序（已移除多语言文件）
+                let categories: [CleanerCategory] = [.systemJunk, .duplicates, .similarPhotos, .largeFiles]
                 
                 ForEach(categories, id: \.self) { category in
                     CleaningTaskRow(
@@ -334,8 +337,7 @@ struct SmartCleanerView: View {
                 .padding(.horizontal, 60)
                 .padding(.bottom, 40)
             
-            // 结果概览 (可以优化为显示有问题的项目列表，或保持卡片)
-            // 这里保持卡片设计，因为结果页需要概览，不需要太详细
+            // 结果概览 - 只显示清理卡片
             HStack(spacing: 40) {
                 // 清理
                 ResultCategoryCard(
@@ -349,30 +351,6 @@ struct SmartCleanerView: View {
                         initialDetailCategory = nil
                         showDetailSheet = true
                     }
-                )
-                
-                // 保护 (Placeholder)
-                ResultCategoryCard(
-                    icon: "hand.raised.fill",
-                    iconColor: .green,
-                    title: loc.currentLanguage == .chinese ? "保护" : "Protection",
-                    subtitle: loc.currentLanguage == .chinese ? "消除潜在威胁" : "Eliminate threats",
-                    value: loc.currentLanguage == .chinese ? "好" : "Good",
-                    valueSecondary: loc.currentLanguage == .chinese ? "没有找到威胁" : "No threats found",
-                    hasDetails: false,
-                    onDetailTap: {}
-                )
-                
-                // 速度 (Placeholder)
-                ResultCategoryCard(
-                    icon: "gauge.high",
-                    iconColor: .pink,
-                    title: loc.currentLanguage == .chinese ? "速度" : "Speed",
-                    subtitle: loc.currentLanguage == .chinese ? "提升系统性能" : "Boost performance",
-                    value: "2",
-                    valueSecondary: loc.currentLanguage == .chinese ? "个任务可运行" : "tasks available",
-                    hasDetails: false,
-                    onDetailTap: {}
                 )
             }
             .padding(.horizontal, 40)
@@ -429,7 +407,7 @@ struct SmartCleanerView: View {
             VStack(alignment: .leading, spacing: 20) {
                 // 计算需要清理的类别列表
                 let categoriesToClean: [CleanerCategory] = {
-                    let all: [CleanerCategory] = [.systemJunk, .duplicates, .similarPhotos, .localizations, .largeFiles]
+                    let all: [CleanerCategory] = [.systemJunk, .duplicates, .similarPhotos, .largeFiles]
                     return all.filter { service.sizeFor(category: $0) > 0 }
                 }()
                 
@@ -572,7 +550,7 @@ struct SmartCleanerView: View {
                         }
                     }
                     
-                    // 深度扫描建议
+                    // 深度扫描建议 - 可点击跳转
                     HStack(spacing: 12) {
                         Image(systemName: "hand.raised.fill") // 盾牌图标
                             .foregroundColor(.white)
@@ -594,41 +572,21 @@ struct SmartCleanerView: View {
                                 .foregroundColor(.secondaryText)
                                 .lineLimit(2)
                             
-                            Button(action: {}) {
+                            Button(action: {
+                                // 跳转到深度清理页面
+                                selectedModule = .deepClean
+                            }) {
                                 Text(loc.currentLanguage == .chinese ? "运行深度扫描" : "Run Deep Scan")
                                     .font(.caption)
                                     .bold()
                                     .foregroundColor(.white)
                                     .padding(.horizontal, 8)
                                     .padding(.vertical, 4)
-                                    .background(Color.white.opacity(0.15))
+                                    .background(Color.green.opacity(0.6))
                                     .cornerRadius(4)
                             }
                             .buttonStyle(.plain)
                             .padding(.top, 4)
-                        }
-                    }
-                    
-                    // 性能任务
-                    HStack(spacing: 12) {
-                        Image(systemName: "gauge.high") // 速度图标
-                            .foregroundColor(.white)
-                            .frame(width: 32, height: 32)
-                            .background(Color.pink)
-                            .cornerRadius(8)
-                        
-                        VStack(alignment: .leading, spacing: 2) {
-                            HStack {
-                                Image(systemName: "checkmark.circle.fill")
-                                    .foregroundColor(.green)
-                                    .font(.caption)
-                                Text(loc.currentLanguage == .chinese ? "2 个任务" : "2 Tasks")
-                                    .font(.headline)
-                                    .foregroundColor(.white)
-                            }
-                            Text(loc.currentLanguage == .chinese ? "Mac 的性能能达到极致" : "Mac performance optimized")
-                                .font(.caption)
-                                .foregroundColor(.secondaryText)
                         }
                     }
                 }
@@ -656,10 +614,9 @@ struct SmartCleanerView: View {
         // 简单判断完成状态：如果当前正在扫描的类别在列表中位于此类别之后，则认为此类别已完成
         // 注意：这依赖于 scanAll 的执行顺序：SystemJunk -> Duplicates -> Similar -> Localizations -> Large
         let isCompleted = !isCurrent && (
-            (category == .systemJunk && [.duplicates, .similarPhotos, .localizations, .largeFiles].contains(service.currentCategory)) ||
-            (category == .duplicates && [.similarPhotos, .localizations, .largeFiles].contains(service.currentCategory)) ||
-            (category == .similarPhotos && [.localizations, .largeFiles].contains(service.currentCategory)) ||
-            (category == .localizations && [.largeFiles].contains(service.currentCategory))
+            (category == .systemJunk && [.duplicates, .similarPhotos, .largeFiles].contains(service.currentCategory)) ||
+            (category == .duplicates && [.similarPhotos, .largeFiles].contains(service.currentCategory)) ||
+            (category == .similarPhotos && [.largeFiles].contains(service.currentCategory))
         )
         
         if isCurrent { return .processing }
@@ -1063,7 +1020,9 @@ struct SubcategoryFileListView: View {
             ScrollView {
                 LazyVStack(spacing: 8) {
                     ForEach(files.sorted { $0.size > $1.size }, id: \.url) { file in
-                        FileItemRow(file: file, showPath: true)
+                        FileItemRow(file: file, showPath: true, onToggle: {
+                            service.toggleFileSelection(file: file, in: category)
+                        })
                     }
                 }
                 .padding(.horizontal)
@@ -1076,12 +1035,19 @@ struct SubcategoryFileListView: View {
 struct FileItemRow: View {
     let file: CleanerFileItem
     let showPath: Bool
+    var onToggle: (() -> Void)? = nil
     
     var body: some View {
         HStack(spacing: 12) {
-            Image(systemName: "checkmark.circle.fill")
-                .foregroundColor(.blue)
-                .font(.system(size: 20))
+            // 可点击的复选框
+            Button(action: {
+                onToggle?()
+            }) {
+                Image(systemName: file.isSelected ? "checkmark.circle.fill" : "circle")
+                    .foregroundColor(file.isSelected ? .blue : .gray)
+                    .font(.system(size: 20))
+            }
+            .buttonStyle(.plain)
             
             Image(nsImage: file.icon)
                 .resizable()
@@ -1485,7 +1451,9 @@ struct AllCategoriesDetailSheet: View {
                 ScrollView {
                     LazyVStack(spacing: 8) {
                         ForEach(filesFor(category: subcategory).sorted { $0.size > $1.size }, id: \.url) { file in
-                            FileItemRow(file: file, showPath: true)
+                            FileItemRow(file: file, showPath: true, onToggle: {
+                                service.toggleFileSelection(file: file, in: subcategory)
+                            })
                         }
                     }
                     .padding(.horizontal)
@@ -1532,7 +1500,9 @@ struct AllCategoriesDetailSheet: View {
             ScrollView {
                 LazyVStack(spacing: 8) {
                     ForEach(filesFor(category: category).sorted { $0.size > $1.size }, id: \.url) { file in
-                        FileItemRow(file: file, showPath: true)
+                        FileItemRow(file: file, showPath: true, onToggle: {
+                            service.toggleFileSelection(file: file, in: category)
+                        })
                     }
                 }
                 .padding(.horizontal)
