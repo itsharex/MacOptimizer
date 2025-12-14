@@ -120,18 +120,6 @@ MacOptimizer is a system optimization tool designed specifically for macOS, feat
 - **Apple Silicon (M1/M2/M3)** or Intel (modify build parameters)
 - **Command Line Tools** (Full Xcode not required)
 
-### Install via Homebrew (Recommended)
-
-```bash
-# Install using Homebrew Cask
-brew tap ddlmanus/macoptimizer
-brew install --cask macoptimizer
-```
-
-Or install directly from the local cask file:
-
-```bash
-brew install --cask ./homebrew/macoptimizer.rb
 ```
 
 ### Download DMG
