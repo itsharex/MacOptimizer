@@ -165,10 +165,10 @@ class ScanServiceManager: ObservableObject {
     
     /// 获取所有扫描项目数量
     var totalItemsFound: Int {
-        junkCleaner.junkItems.count +
-        largeFileScanner.foundFiles.count +
-        deepCleanScanner.items.count +
-        smartCleanerService.duplicateGroups.flatMap { $0.files }.count +
-        smartCleanerService.localizationFiles.count
+        let junkCount = junkCleaner.junkItems.count
+        let largeFileCount = largeFileScanner.foundFiles.count
+        let deepCleanCount = deepCleanScanner.items.count
+        // Add other counts separately if needed
+        return junkCount + largeFileCount + deepCleanCount
     }
 }

@@ -1,6 +1,7 @@
 import Foundation
 import Combine
 import AppKit
+import SQLite3
 
 // MARK: - 扫描状态
 enum PrivacyScanState {
@@ -20,6 +21,7 @@ enum PrivacyType: String, CaseIterable, Identifiable {
     case recentItems = "最近项目列表"
     case wifi = "Wi-Fi 网络"
     case chat = "聊天信息"
+    case development = "开发痕迹" // Terminal, VSCode, etc.
     
     var id: String { rawValue }
     
@@ -32,6 +34,7 @@ enum PrivacyType: String, CaseIterable, Identifiable {
         case .recentItems: return "clock" // 最近项目
         case .wifi: return "wifi" // Wi-Fi
         case .chat: return "message" // 聊天
+        case .development: return "terminal" // 开发
         }
     }
 }
@@ -64,11 +67,76 @@ struct PrivacyItem: Identifiable, Equatable {
     let size: Int64
     let displayPath: String // 用于显示更友好的路径或描述
     var isSelected: Bool = true
+    var children: [PrivacyItem]? = nil // 子项列表（用于展开详情）
+}
+
+// MARK: - 应用权限项模型
+struct AppPermission: Identifiable, Equatable {
+    let id = UUID()
+    let bundleId: String
+    let appName: String
+    let appIcon: NSImage
+    let service: String         // kTCCServiceCamera
+    let serviceName: String     // "相机"
+    let serviceCategory: String // "隐私"
+    let authValue: Int          // 0=拒绝, 2=允许
+    let lastModified: Date
+    
+    static func == (lhs: AppPermission, rhs: AppPermission) -> Bool {
+        lhs.id == rhs.id
+    }
+}
+
+// MARK: - 浏览器数据类型
+enum BrowserDataType: String, CaseIterable, Identifiable {
+    case browsingHistory = "浏览历史"
+    case downloadHistory = "下载历史"
+    case cookies = "Cookies"
+    case passwords = "已存储密码"
+    case autofillForms = "自动填充表格"
+    case searchQueries = "搜索问题"
+    case lastSession = "上次活动时间表"
+    case localStorage = "本地存储"
+    case cache = "缓存"
+    
+    var id: String { rawValue }
+    
+    var icon: String {
+        switch self {
+        case .browsingHistory: return "clock.arrow.circlepath"
+        case .downloadHistory: return "arrow.down.circle"
+        case .cookies: return "network"
+        case .passwords: return "key.fill"
+        case .autofillForms: return "doc.text.fill"
+        case .searchQueries: return "magnifyingglass"
+        case .lastSession: return "clock"
+        case .localStorage: return "internaldrive"
+        case .cache: return "folder"
+        }
+    }
+}
+
+// MARK: - 浏览器数据项模型
+struct BrowserDataItem: Identifiable, Equatable {
+    let id = UUID()
+    let browser: BrowserType
+    let dataType: BrowserDataType
+    let count: Int              // 条目数：377个Cookie
+    let size: Int64             // 文件大小：229 KB
+    let profile: String         // Profile名称：Default
+    let appIcon: NSImage?       // 真实应用图标
+    var isSelected: Bool = true
+    
+    static func == (lhs: BrowserDataItem, rhs: BrowserDataItem) -> Bool {
+        lhs.id == rhs.id
+    }
 }
 
 // MARK: - 隐私扫描服务
 class PrivacyScannerService: ObservableObject {
     @Published var privacyItems: [PrivacyItem] = []
+    @Published var appPermissions: [AppPermission] = [] // 新增：解析出的应用权限
+    @Published var browserDataItems: [BrowserDataItem] = [] // 新增：解析出的浏览器数据
     @Published var isScanning: Bool = false
     @Published var scanProgress: Double = 0
     @Published var shouldStop = false
@@ -129,8 +197,18 @@ class PrivacyScannerService: ObservableObject {
         // 3. 扫描应用权限 (TCC)
         if !shouldStop {
             let permissions = await scanPermissions()
+            print("🔵 [Privacy] scanPermissions returned \(permissions.count) items")
             await MainActor.run {
                 privacyItems.append(contentsOf: permissions)
+                print("🔵 [Privacy] Total privacyItems after adding permissions: \(privacyItems.count)")
+                print("🔵 [Privacy] Permissions items: \(privacyItems.filter { $0.type == .permissions }.count)")
+                
+                // 打印前 10 个权限项
+                let permItems = privacyItems.filter { $0.type == .permissions }
+                for (index, item) in permItems.prefix(10).enumerated() {
+                    print("  \(index + 1). \(item.displayPath)")
+                }
+                
                 scanProgress += 0.1
             }
         }
@@ -149,6 +227,15 @@ class PrivacyScannerService: ObservableObject {
             let chatItems = await scanChatData()
             await MainActor.run {
                 privacyItems.append(contentsOf: chatItems)
+                scanProgress += 0.1
+            }
+        }
+        
+        // 6. 扫描开发痕迹 (Terminal, VSCode)
+        if !shouldStop {
+            let devItems = await scanDevelopmentHistory()
+            await MainActor.run {
+                privacyItems.append(contentsOf: devItems)
                 scanProgress = 1.0
                 isScanning = false
             }
@@ -218,46 +305,368 @@ class PrivacyScannerService: ObservableObject {
         return success
     }
     
+    /// 递归切换选中状态
+    func toggleSelection(for id: UUID) {
+        func toggle(in items: inout [PrivacyItem]) -> Bool {
+            for i in 0..<items.count {
+                if items[i].id == id {
+                    items[i].isSelected.toggle()
+                    // 如果有子项，同步选中状态
+                    if let children = items[i].children {
+                        for j in 0..<children.count {
+                            items[i].children![j].isSelected = items[i].isSelected
+                        }
+                    }
+                    return true
+                }
+                // 递归查找子项
+                if items[i].children != nil {
+                    if toggle(in: &items[i].children!) {
+                        
+                        // 更新父项状态（可选：如果所有子项都被选中/取消，父项也要更新？暂不实现复杂逻辑）
+                        return true
+                    }
+                }
+            }
+            return false
+        }
+        
+        if toggle(in: &privacyItems) {
+            objectWillChange.send()
+        }
+    }
+    
     // MARK: - 清理方法
     func cleanSelected() async -> (cleaned: Int64, failed: Int64) {
         var cleaned: Int64 = 0
         var failed: Int64 = 0
+        var successfullyDeleted: Set<URL> = []
+        
+        // DEBUG: Print all items and their selection state
+        print("🔍 [DEBUG] Total privacy items: \(privacyItems.count)")
+        for (index, item) in privacyItems.enumerated() {
+            print("  [\(index)] \(item.displayPath) - selected: \(item.isSelected), path: \(item.path.lastPathComponent)")
+        }
+        
+        // 1. Gather all unique paths to delete from selected items (recursive)
+        // IMPORTANT: Skip permission items (type == .permissions) as they can't be deleted as files
+        var pathsToDelete: Set<URL> = []
+        
+        func collectPaths(from items: [PrivacyItem]) {
+            for item in items {
+                if item.isSelected && item.type != .permissions {
+                    // Skip invalid paths like /dev/null
+                    if item.path.path != "/dev/null" && !item.path.path.isEmpty {
+                        pathsToDelete.insert(item.path)
+                    }
+                }
+                if let children = item.children {
+                    collectPaths(from: children)
+                }
+            }
+        }
+        collectPaths(from: privacyItems)
+        
+        print("🧹 [Clean] Starting cleanup of \(pathsToDelete.count) paths")
+        
+        if pathsToDelete.isEmpty {
+            print("⚠️ [Clean] WARNING: No items selected for deletion!")
+            return (0, 0)
+        }
         
         let itemsToDelete = privacyItems.filter { $0.isSelected }
         
-        for item in itemsToDelete {
-            do {
-                // 如果是特殊的逻辑类型（如权限），需要特殊处理
-                if item.type == .permissions {
-                    // Try to reset permission: tccutil reset SERVICE APP_BUNDLE_ID
-                    // This is limited and might require higher privileges or specific entitlements.
-                    // For now we might just skip or log.
-                    // 这里仅做模拟，实际需要 System TCC reset 权限
-                    cleaned += 0 // Metadata only
-                } else if item.type == .wifi {
-                     // Wi-Fi removal usually requires network setup tool
-                     // Skip for safety
-                } else {
-                    // 普通文件删除
-                    if fileManager.fileExists(atPath: item.path.path) {
-                        try fileManager.removeItem(at: item.path)
-                        cleaned += item.size
+        // 2. Terminate Browsers to release file locks
+        let browsersToClose: Set<String> = Set(itemsToDelete.compactMap {
+            switch $0.browser {
+            case .chrome: return "com.google.Chrome"
+            case .firefox: return "org.mozilla.firefox"
+            case .safari: return "com.apple.Safari"
+            default: return nil
+            }
+        })
+        
+        if !browsersToClose.isEmpty {
+            print("🧹 [Clean] Closing browsers: \(browsersToClose)")
+            for bundleId in browsersToClose {
+                let apps = NSRunningApplication.runningApplications(withBundleIdentifier: bundleId)
+                for app in apps {
+                    app.terminate()
+                }
+            }
+            try? await Task.sleep(nanoseconds: 2 * 1_000_000_000)
+            
+            for bundleId in browsersToClose {
+                let apps = NSRunningApplication.runningApplications(withBundleIdentifier: bundleId)
+                for app in apps {
+                    if !app.isTerminated {
+                        print("🧹 [Clean] Force terminating \(bundleId)")
+                        app.forceTerminate()
                     }
                 }
-            } catch {
-                print("Failed to delete \(item.path.path): \(error)")
-                failed += item.size
+            }
+            try? await Task.sleep(nanoseconds: 500_000_000)
+        }
+        
+        // 3. Perform Intelligent Cleaning
+        for path in pathsToDelete {
+            let pathString = path.path
+            let fileName = path.lastPathComponent
+            
+            // Check if this is a browser database that should be cleaned with SQL
+            if pathString.contains("/Google/Chrome/") {
+                // Use SQL DELETE for Chrome databases to preserve login state
+                if fileName == "History" {
+                    print("🧹 [Clean] Clearing Chrome History with SQL...")
+                    let cleared = clearChromeHistory(at: path)
+                    if cleared > 0 {
+                        successfullyDeleted.insert(path)
+                        print("✅ [Clean] Cleared Chrome History tables")
+                    }
+                    continue
+                } else if fileName == "Cookies" {
+                    print("🧹 [Clean] Clearing Chrome Cookies with SQL...")
+                    let cleared = clearChromeCookies(at: path)
+                    if cleared > 0 {
+                        successfullyDeleted.insert(path)
+                        print("✅ [Clean] Cleared Chrome Cookies")
+                    }
+                    continue
+                } else if fileName == "Web Data" {
+                    print("🧹 [Clean] Clearing Chrome Autofill with SQL...")
+                    let cleared = clearChromeAutofillData(at: path)
+                    if cleared > 0 {
+                        successfullyDeleted.insert(path)
+                        print("✅ [Clean] Cleared Chrome Autofill")
+                    }
+                    continue
+                }
+                // Other Chrome files (GPU Cache, Favicons, etc.) - delete normally
+            } else if pathString.contains("/Safari/") && fileName == "History.db" {
+                print("🧹 [Clean] Clearing Safari History with SQL...")
+                let cleared = clearSafariHistory(at: path)
+                if cleared > 0 {
+                    successfullyDeleted.insert(path)
+                    print("✅ [Clean] Cleared Safari History")
+                }
+                continue
+            }
+            
+            // Default: Delete file normally
+            do {
+                if fileManager.fileExists(atPath: path.path) {
+                    print("🧹 [Clean] Deleting: \(path.path)")
+                    try fileManager.removeItem(at: path)
+                    
+                    // Verify deletion
+                    if !fileManager.fileExists(atPath: path.path) {
+                        successfullyDeleted.insert(path)
+                        print("✅ [Clean] SUCCESS: \(path.lastPathComponent)")
+                    } else {
+                        print("⚠️ [Clean] File still exists after deletion: \(path.path)")
+                        failed += 1
+                    }
+                    
+                    // Delete related SQLite files
+                    let relatedPaths = [
+                        pathString + "-wal",
+                        pathString + "-shm", 
+                        pathString + "-journal"
+                    ]
+                    for relPath in relatedPaths {
+                        if fileManager.fileExists(atPath: relPath) {
+                            try? fileManager.removeItem(atPath: relPath)
+                        }
+                    }
+                } else {
+                    // File doesn't exist, consider it "cleaned"
+                    successfullyDeleted.insert(path)
+                }
+            } catch let error as NSError {
+                if error.code == 513 || error.domain == NSCocoaErrorDomain {
+                    print("❌ [Clean] PERMISSION DENIED: \(path.lastPathComponent)")
+                    print("   → 请在系统设置中授予\"完全磁盘访问权限\"")
+                } else {
+                    print("❌ [Clean] ERROR: \(path.lastPathComponent) - \(error.localizedDescription)")
+                }
+                failed += 1
             }
         }
         
+        // Calculate cleaned size from successfully deleted paths
+        func sumSize(from items: [PrivacyItem], deleted: Set<URL>) {
+            for item in items {
+                if deleted.contains(item.path) {
+                    cleaned += item.size
+                }
+                if let children = item.children {
+                    sumSize(from: children, deleted: deleted)
+                }
+            }
+        }
+        sumSize(from: privacyItems, deleted: successfullyDeleted)
+        
+        print("🧹 [Clean] Result: \(successfullyDeleted.count) deleted, \(failed) failed")
+        
+        // 4. Handle Recent Items refresh
+        if itemsToDelete.contains(where: { $0.type == .recentItems }) {
+            print("🧹 [Clean] Clearing Finder Recents metadata...")
+            
+            // Kill sharedfilelistd to release .sfl files
+            let task = Process()
+            task.launchPath = "/usr/bin/killall"
+            task.arguments = ["sharedfilelistd"]
+            try? task.run()
+            
+            // Clear Spotlight kMDItemLastUsedDate metadata for recent files
+            // This is what Finder "Recents" actually uses
+            await clearSpotlightRecentMetadata()
+            
+            // Restart Finder to refresh
+            let task2 = Process()
+            task2.launchPath = "/usr/bin/killall"
+            task2.arguments = ["Finder"]
+            try? task2.run()
+            
+            print("✅ [Clean] Finder refresh commands sent")
+        }
+        
+        // 5. Handle Permission Reset using tccutil
+        let selectedPermissions = privacyItems.filter { $0.type == .permissions && $0.isSelected }
+        if !selectedPermissions.isEmpty {
+            print("🔒 [Clean] Resetting \(selectedPermissions.count) TCC permissions...")
+            await resetTCCPermissions(selectedPermissions)
+        }
+        
         await MainActor.run {
-            // Remove deleted items from list
+            // Remove successfully deleted file items from list
             privacyItems.removeAll { item in
-                itemsToDelete.contains { $0.id == item.id }
+                successfullyDeleted.contains(item.path)
+            }
+            // Also remove permission items that were selected (we attempted to reset them)
+            privacyItems.removeAll { item in
+                item.type == .permissions && item.isSelected
             }
         }
         
         return (cleaned, failed)
+    }
+    
+    /// Clear Spotlight kMDItemLastUsedDate metadata from recently used files
+    /// This is what Finder "Recents" smart folder actually uses
+    private func clearSpotlightRecentMetadata() async {
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        
+        // Common directories where recent files are typically found
+        let directories = [
+            home.appendingPathComponent("Desktop"),
+            home.appendingPathComponent("Documents"),
+            home.appendingPathComponent("Downloads")
+        ]
+        
+        var clearedCount = 0
+        
+        for dir in directories {
+            guard fileManager.fileExists(atPath: dir.path) else { continue }
+            
+            // Get files in directory (non-recursive to avoid too many files)
+            if let contents = try? fileManager.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil) {
+                for file in contents.prefix(100) { // Limit to 100 files per directory
+                    // Use xattr to remove kMDItemLastUsedDate
+                    let process = Process()
+                    process.launchPath = "/usr/bin/xattr"
+                    process.arguments = ["-d", "com.apple.metadata:kMDItemLastUsedDate", file.path]
+                    process.standardOutput = FileHandle.nullDevice
+                    process.standardError = FileHandle.nullDevice
+                    
+                    try? process.run()
+                    process.waitUntilExit()
+                    
+                    if process.terminationStatus == 0 {
+                        clearedCount += 1
+                    }
+                }
+            }
+        }
+        
+        print("🧹 [Clean] Cleared kMDItemLastUsedDate from \(clearedCount) files")
+    }
+    
+    /// Reset TCC permissions using tccutil command
+    /// Note: This resets permissions to "ask again" state, not completely removes them
+    /// WARNING: Some permissions should NOT be reset as they affect system/app functionality
+    private func resetTCCPermissions(_ permissions: [PrivacyItem]) async {
+        // Map display names to TCC service names
+        let tccServiceMap: [String: String] = [
+            "完全磁盘访问": "SystemPolicyAllFiles",
+            "文稿文件夹": "SystemPolicyDocumentsFolder",
+            "下载文件夹": "SystemPolicyDownloadsFolder",
+            "桌面文件夹": "SystemPolicyDesktopFolder",
+            "照片": "Photos",
+            "通讯录": "AddressBook",
+            "日历": "Calendar",
+            "提醒事项": "Reminders",
+            "麦克风": "Microphone",
+            "摄像头": "Camera",
+            "屏幕录制": "ScreenCapture",
+            "辅助功能": "Accessibility",
+            "蓝牙": "Bluetooth",
+            "自动化": "AppleEvents",
+            "位置信息": "Location",
+            "媒体资料库": "MediaLibrary"
+        ]
+        
+        // CRITICAL: These permissions should NOT be auto-reset as they affect app/system functionality
+        let dangerousPermissions: Set<String> = [
+            "ScreenCapture",      // 会导致截屏时应用被隐藏
+            "Accessibility",      // 会破坏辅助功能
+            "SystemPolicyAllFiles" // 会导致应用失去 FDA 权限无法工作
+        ]
+        
+        var resetCount = 0
+        
+        for permission in permissions {
+            // Extract service type from displayPath (e.g., "微信 - 屏幕录制" -> "屏幕录制")
+            let parts = permission.displayPath.components(separatedBy: " - ")
+            guard parts.count >= 2 else { continue }
+            
+            let serviceDisplayName = parts.last ?? ""
+            
+            // Find matching TCC service
+            guard let tccService = tccServiceMap.first(where: { serviceDisplayName.contains($0.key) })?.value else {
+                print("⚠️ [TCC] Unknown service type: \(serviceDisplayName)")
+                continue
+            }
+            
+            // SKIP dangerous permissions that would break app functionality
+            if dangerousPermissions.contains(tccService) {
+                print("⚠️ [TCC] Skipping dangerous permission: \(tccService) (would break app functionality)")
+                continue
+            }
+            
+            // Run tccutil reset command
+            let process = Process()
+            process.launchPath = "/usr/bin/tccutil"
+            process.arguments = ["reset", tccService]
+            process.standardOutput = FileHandle.nullDevice
+            process.standardError = FileHandle.nullDevice
+            
+            do {
+                try process.run()
+                process.waitUntilExit()
+                
+                if process.terminationStatus == 0 {
+                    resetCount += 1
+                    print("✅ [TCC] Reset \(tccService)")
+                } else {
+                    print("❌ [TCC] Failed to reset \(tccService)")
+                }
+            } catch {
+                print("❌ [TCC] Error running tccutil: \(error)")
+            }
+        }
+        
+        print("🔒 [Clean] Reset \(resetCount) TCC permissions")
     }
     
     // MARK: - Helper Scanning Methods
@@ -293,10 +702,38 @@ class PrivacyScannerService: ObservableObject {
             items.append(PrivacyItem(browser: .safari, type: .downloads, path: downloadsURL, size: size, displayPath: "Safari 下载记录列表"))
         }
         
-        // 3. Cookies
-        let cookiesURL = home.appendingPathComponent("Library/Cookies/Cookies.binarycookies")
-        if let size = fileSize(at: cookiesURL) {
-            items.append(PrivacyItem(browser: .safari, type: .cookies, path: cookiesURL, size: size, displayPath: "Safari Cookie 文件"))
+        // 3. Cookies - Check multiple locations for different macOS versions
+        let cookiesPaths = [
+            // Classic location (macOS Mojave and earlier)
+            home.appendingPathComponent("Library/Cookies/Cookies.binarycookies"),
+            // Containers location (macOS Catalina+)
+            home.appendingPathComponent("Library/Containers/com.apple.Safari/Data/Library/Cookies/Cookies.binarycookies"),
+            // Safari 16+ on macOS Ventura/Sonoma
+            home.appendingPathComponent("Library/Safari/Cookies"),
+            // WebKit Cookies
+            home.appendingPathComponent("Library/WebKit/com.apple.Safari/Cookies/Cookies.binarycookies")
+        ]
+        
+        for cookiesURL in cookiesPaths {
+            if let size = fileSize(at: cookiesURL) {
+                items.append(PrivacyItem(browser: .safari, type: .cookies, path: cookiesURL, size: size, displayPath: "Safari Cookie 文件"))
+                print("   ✅ Found Safari Cookies at: \(cookiesURL.path)")
+                break // Only add once
+            }
+            // Check if it's a directory
+            if let size = folderSize(at: cookiesURL), size > 0 {
+                items.append(PrivacyItem(browser: .safari, type: .cookies, path: cookiesURL, size: size, displayPath: "Safari Cookies 目录"))
+                print("   ✅ Found Safari Cookies directory at: \(cookiesURL.path)")
+                break
+            }
+        }
+        
+        // Also check for system-wide cookies that Safari uses
+        let systemCookiesURL = URL(fileURLWithPath: "/Library/Cookies")
+        if fileManager.fileExists(atPath: systemCookiesURL.path) {
+            if let size = folderSize(at: systemCookiesURL), size > 0 {
+                items.append(PrivacyItem(browser: .safari, type: .cookies, path: systemCookiesURL, size: size, displayPath: "系统 Cookies"))
+            }
         }
         
         // 4. LocalStorage
@@ -340,7 +777,25 @@ class PrivacyScannerService: ObservableObject {
         if let size = fileSize(at: topSitesURL) {
             items.append(PrivacyItem(browser: .safari, type: .history, path: topSitesURL, size: size, displayPath: "Safari 热门网站"))
         }
+
+        // 11. Favicon Cache
+        let faviconsURL = home.appendingPathComponent("Library/Safari/Favicon Cache")
+        if let size = folderSize(at: faviconsURL), size > 0 {
+            items.append(PrivacyItem(browser: .safari, type: .history, path: faviconsURL, size: size, displayPath: "Safari 网站图标缓存"))
+        }
         
+        // 12. Remote Notifications
+        let remoteNotifURL = home.appendingPathComponent("Library/Safari/RemoteNotification")
+        if let size = folderSize(at: remoteNotifURL), size > 0 {
+             items.append(PrivacyItem(browser: .safari, type: .history, path: remoteNotifURL, size: size, displayPath: "Safari 远程通知缓存"))
+        }
+
+        // 13. Recently Closed Tabs
+        let closedTabsURL = home.appendingPathComponent("Library/Safari/RecentlyClosedTabs.plist")
+        if let size = fileSize(at: closedTabsURL) {
+            items.append(PrivacyItem(browser: .safari, type: .history, path: closedTabsURL, size: size, displayPath: "Safari 最近关闭标签页"))
+        }
+
         return items
     }
     
@@ -351,7 +806,9 @@ class PrivacyScannerService: ObservableObject {
         
         guard fileManager.fileExists(atPath: chromeDir.path) else { return [] }
         
-        // 扫描所有 Profile (Default, Profile 1, Profile 2, etc.)
+        print("🔍 [Chrome] Starting deep scan...")
+        
+        // 扫描所有 Profile
         var profiles: [URL] = []
         let defaultPath = chromeDir.appendingPathComponent("Default")
         if fileManager.fileExists(atPath: defaultPath.path) {
@@ -365,158 +822,318 @@ class PrivacyScannerService: ObservableObject {
             }
         }
         
+        print("   Found \(profiles.count) Chrome profiles")
+        
         for profile in profiles {
             let profileName = profile.lastPathComponent
             
-            // 1. History
+            // ===== 1. 解析 History 数据库 =====
             let historyURL = profile.appendingPathComponent("History")
-            addWithRelatedFiles(path: historyURL, type: .history, browser: .chrome, description: "Chrome 浏览记录 (\(profileName))", to: &items)
+            if fileManager.fileExists(atPath: historyURL.path) {
+                let (visits, downloads, searches) = parseChromeHistory(at: historyURL)
+                let historySize = fileSize(at: historyURL) ?? 0
+                
+                print("   ✅ \(profileName) - History: \(visits) visits, \(downloads) downloads, \(searches) searches")
+                
+                if visits > 0 {
+                    items.append(PrivacyItem(browser: .chrome, type: .history, path: historyURL, size: historySize, displayPath: "Chrome 浏览历史 (\(profileName)) - \(visits) 条记录"))
+                }
+                if downloads > 0 {
+                    items.append(PrivacyItem(browser: .chrome, type: .downloads, path: historyURL, size: 0, displayPath: "Chrome 下载历史 (\(profileName)) - \(downloads) 条记录"))
+                }
+                if searches > 0 {
+                    items.append(PrivacyItem(browser: .chrome, type: .history, path: historyURL, size: 0, displayPath: "Chrome 搜索问题 (\(profileName)) - \(searches) 条记录"))
+                }
+            }
             
-            // 2. Cookies
+            // ===== 2. 解析 Cookies 数据库 =====
             let cookiesURL = profile.appendingPathComponent("Cookies")
-            addWithRelatedFiles(path: cookiesURL, type: .cookies, browser: .chrome, description: "Chrome Cookies (\(profileName))", to: &items)
+            if fileManager.fileExists(atPath: cookiesURL.path) {
+                let cookieCount = parseChromeCookies(at: cookiesURL)
+                let cookieSize = fileSize(at: cookiesURL) ?? 0
+                
+                print("   ✅ \(profileName) - Cookies: \(cookieCount) cookies")
+                
+                if cookieCount > 0 {
+                    // 解析详情 (Top 100 Domains)
+                    let details = parseChromeCookiesDetails(at: cookiesURL)
+                    let children = details.map { (domain, count) in
+                        PrivacyItem(
+                            browser: .chrome,
+                            type: .cookies,
+                            path: cookiesURL,
+                            size: 0,
+                            displayPath: "\(domain) - \(count) 项"
+                        )
+                    }
+                    
+                    items.append(PrivacyItem(
+                        browser: .chrome, 
+                        type: .cookies, 
+                        path: cookiesURL, 
+                        size: cookieSize, 
+                        displayPath: "Chrome Cookies (\(profileName)) - \(cookieCount) 个",
+                        children: children.isEmpty ? nil : children
+                    ))
+                }
+            }
             
-            // 3. Local Storage
+            // ===== 3. 解析 Login Data (密码) =====
+            let loginDataURL = profile.appendingPathComponent("Login Data")
+            if fileManager.fileExists(atPath: loginDataURL.path) {
+                let passwordCount = parseChromePasswords(at: loginDataURL)
+                let loginSize = fileSize(at: loginDataURL) ?? 0
+                
+                print("   ✅ \(profileName) - Passwords: \(passwordCount) passwords")
+                
+                if passwordCount > 0 {
+                    items.append(PrivacyItem(browser: .chrome, type: .history, path: loginDataURL, size: loginSize, displayPath: "Chrome 已存储密码 (\(profileName)) - \(passwordCount) 个"))
+                }
+            }
+            
+            // ===== 4. 解析 Web Data (自动填充) =====
+            let webDataURL = profile.appendingPathComponent("Web Data")
+            if fileManager.fileExists(atPath: webDataURL.path) {
+                let autofillCount = parseChromeAutofill(at: webDataURL)
+                let webDataSize = fileSize(at: webDataURL) ?? 0
+                
+                print("   ✅ \(profileName) - Autofill: \(autofillCount) entries")
+                
+                if autofillCount > 0 {
+                    items.append(PrivacyItem(browser: .chrome, type: .history, path: webDataURL, size: webDataSize, displayPath: "Chrome 自动填充表格 (\(profileName)) - \(autofillCount) 个"))
+                }
+            }
+            
+            // ===== 5. Local Storage =====
             let localStorageURL = profile.appendingPathComponent("Local Storage/leveldb")
             if let size = folderSize(at: localStorageURL), size > 0 {
                 items.append(PrivacyItem(browser: .chrome, type: .history, path: localStorageURL, size: size, displayPath: "Chrome 本地存储 (\(profileName))"))
             }
             
-            // 4. Session Storage
-            let sessionStorageURL = profile.appendingPathComponent("Session Storage")
-            if let size = folderSize(at: sessionStorageURL), size > 0 {
-                items.append(PrivacyItem(browser: .chrome, type: .history, path: sessionStorageURL, size: size, displayPath: "Chrome 会话存储 (\(profileName))"))
-            }
-            
-            // 5. IndexedDB
+            // ===== 6. IndexedDB =====
             let indexedDBURL = profile.appendingPathComponent("IndexedDB")
             if let size = folderSize(at: indexedDBURL), size > 0 {
                 items.append(PrivacyItem(browser: .chrome, type: .history, path: indexedDBURL, size: size, displayPath: "Chrome IndexedDB (\(profileName))"))
             }
             
-            // 6. Cache
+            // ===== 7. Cache =====
             let cacheURL = profile.appendingPathComponent("Cache")
             if let size = folderSize(at: cacheURL), size > 0 {
                 items.append(PrivacyItem(browser: .chrome, type: .history, path: cacheURL, size: size, displayPath: "Chrome 缓存 (\(profileName))"))
             }
             
-            // 7. Web Data (表单自动填充)
-            let webDataURL = profile.appendingPathComponent("Web Data")
-            addWithRelatedFiles(path: webDataURL, type: .history, browser: .chrome, description: "Chrome 表单数据 (\(profileName))", to: &items)
-            
-            // 8. Visited Links
-            let visitedLinksURL = profile.appendingPathComponent("Visited Links")
-            if let size = fileSize(at: visitedLinksURL) {
-                items.append(PrivacyItem(browser: .chrome, type: .history, path: visitedLinksURL, size: size, displayPath: "Chrome 访问链接 (\(profileName))"))
+            // ===== 8. Service Worker =====
+            let swCacheURL = profile.appendingPathComponent("Service Worker/CacheStorage")
+            if let size = folderSize(at: swCacheURL), size > 0 {
+                items.append(PrivacyItem(browser: .chrome, type: .history, path: swCacheURL, size: size, displayPath: "Chrome Service Worker 缓存 (\(profileName))"))
             }
             
-            // 9. Top Sites
-            let topSitesURL = profile.appendingPathComponent("Top Sites")
-            addWithRelatedFiles(path: topSitesURL, type: .history, browser: .chrome, description: "Chrome 热门网站 (\(profileName))", to: &items)
+            // ===== 9. GPU Cache =====
+            let gpuCacheURL = profile.appendingPathComponent("GPUCache")
+            if let size = folderSize(at: gpuCacheURL), size > 0 {
+                items.append(PrivacyItem(browser: .chrome, type: .history, path: gpuCacheURL, size: size, displayPath: "Chrome GPU 缓存 (\(profileName))"))
+            }
+
+            // ===== 10. Session Data =====
+            let sessionFiles = ["Last Session", "Last Tabs", "Current Session", "Current Tabs", "Top Sites", "Shortcuts", "Visited Links", "Favicons"]
+            for sFile in sessionFiles {
+                let sURL = profile.appendingPathComponent(sFile)
+                if let size = fileSize(at: sURL) {
+                    items.append(PrivacyItem(browser: .chrome, type: .history, path: sURL, size: size, displayPath: "Chrome \(sFile) (\(profileName))"))
+                }
+            }
         }
         
+        print("   📊 Total Chrome items: \(items.count)")
         return items
     }
+
     
     private func scanFirefox() -> [PrivacyItem] {
         var items: [PrivacyItem] = []
         let home = FileManager.default.homeDirectoryForCurrentUser
-        let profilesPath = home.appendingPathComponent("Library/Application Support/Firefox/Profiles")
+        let firefoxDir = home.appendingPathComponent("Library/Application Support/Firefox/Profiles")
         
-        guard let profiles = try? fileManager.contentsOfDirectory(at: profilesPath, includingPropertiesForKeys: nil), !profiles.isEmpty else { return [] }
+        guard fileManager.fileExists(atPath: firefoxDir.path) else { return [] }
+        
+        print("🔍 [Firefox] Starting deep scan...")
+        
+        
+        // 获取 Firefox 图标 (暂未使用)
+        _ = getAppIcon(for: .firefox)
+        
+        // 获取所有 Profile
+        let profiles = (try? fileManager.contentsOfDirectory(at: firefoxDir, includingPropertiesForKeys: nil)) ?? []
+        print("   Found \(profiles.count) Firefox profiles")
         
         for profile in profiles {
             let profileName = profile.lastPathComponent
+            if profileName.hasPrefix(".") { continue } // 跳过隐藏文件
             
             // 1. History (places.sqlite)
-            let historyURL = profile.appendingPathComponent("places.sqlite")
-            addWithRelatedFiles(path: historyURL, type: .history, browser: .firefox, description: "Firefox 历史记录 (\(profileName))", to: &items)
+            let placesURL = profile.appendingPathComponent("places.sqlite")
+            if fileManager.fileExists(atPath: placesURL.path) {
+                let visitCount = parseFirefoxHistory(at: placesURL)
+                let size = fileSize(at: placesURL) ?? 0
+                
+                print("   ✅ \(profileName) - History: \(visitCount) visits")
+                
+                if visitCount > 0 {
+                    items.append(PrivacyItem(
+                        browser: .firefox,
+                        type: .history, 
+                        path: placesURL,
+                        size: size,
+                        displayPath: "Firefox 浏览历史 (\(profileName)) - \(visitCount) 条记录"
+                    ))
+                }
+            }
             
-            // 2. Cookies
+            // 2. Cookies (cookies.sqlite)
             let cookiesURL = profile.appendingPathComponent("cookies.sqlite")
-            addWithRelatedFiles(path: cookiesURL, type: .cookies, browser: .firefox, description: "Firefox Cookies (\(profileName))", to: &items)
+            if fileManager.fileExists(atPath: cookiesURL.path) {
+                let cookieCount = parseFirefoxCookies(at: cookiesURL)
+                let size = fileSize(at: cookiesURL) ?? 0
+                
+                print("   ✅ \(profileName) - Cookies: \(cookieCount) cookies")
+                
+                if cookieCount > 0 {
+                    items.append(PrivacyItem(
+                        browser: .firefox,
+                        type: .cookies,
+                        path: cookiesURL,
+                        size: size,
+                        displayPath: "Firefox Cookies (\(profileName)) - \(cookieCount) 个"
+                    ))
+                }
+            }
             
-            // 3. Form History (表单自动填充)
+            // 3. Form History (formhistory.sqlite)
             let formHistoryURL = profile.appendingPathComponent("formhistory.sqlite")
-            addWithRelatedFiles(path: formHistoryURL, type: .history, browser: .firefox, description: "Firefox 表单记录 (\(profileName))", to: &items)
-            
-            // 4. Downloads
-            let downloadsURL = profile.appendingPathComponent("downloads.sqlite")
-            addWithRelatedFiles(path: downloadsURL, type: .downloads, browser: .firefox, description: "Firefox 下载记录 (\(profileName))", to: &items)
-            
-            // 5. Session Store
-            let sessionURL = profile.appendingPathComponent("sessionstore.jsonlz4")
-            if let size = fileSize(at: sessionURL) {
-                items.append(PrivacyItem(browser: .firefox, type: .history, path: sessionURL, size: size, displayPath: "Firefox 会话数据 (\(profileName))"))
+            if fileManager.fileExists(atPath: formHistoryURL.path) {
+                let formCount = parseFirefoxFormHistory(at: formHistoryURL)
+                let size = fileSize(at: formHistoryURL) ?? 0
+                
+                print("   ✅ \(profileName) - Form History: \(formCount) entries")
+                
+                if formCount > 0 {
+                    items.append(PrivacyItem(
+                        browser: .firefox,
+                        type: .history,
+                        path: formHistoryURL,
+                        size: size,
+                        displayPath: "Firefox 表单历史 (\(profileName)) - \(formCount) 条记录"
+                    ))
+                }
             }
             
-            // 6. Content Prefs (网站偏好)
-            let contentPrefsURL = profile.appendingPathComponent("content-prefs.sqlite")
-            addWithRelatedFiles(path: contentPrefsURL, type: .history, browser: .firefox, description: "Firefox 内容偏好 (\(profileName))", to: &items)
-            
-            // 7. IndexedDB
-            let indexedDBURL = profile.appendingPathComponent("storage/default")
-            if let size = folderSize(at: indexedDBURL), size > 0 {
-                items.append(PrivacyItem(browser: .firefox, type: .history, path: indexedDBURL, size: size, displayPath: "Firefox IndexedDB (\(profileName))"))
+            // 4. Cache
+            // Firefox Cache 通常在 ~/Library/Caches/Firefox/Profiles/...
+            let cacheDir = home.appendingPathComponent("Library/Caches/Firefox/Profiles/\(profileName)/cache2")
+            if let size = folderSize(at: cacheDir), size > 0 {
+                items.append(PrivacyItem(browser: .firefox, type: .history, path: cacheDir, size: size, displayPath: "Firefox 缓存 (\(profileName))"))
             }
-            
-            // 8. Cache
-            let cacheURL = profile.appendingPathComponent("cache2")
-            if let size = folderSize(at: cacheURL), size > 0 {
-                items.append(PrivacyItem(browser: .firefox, type: .history, path: cacheURL, size: size, displayPath: "Firefox 缓存 (\(profileName))"))
+
+            // 5. Local Storage (storage/default)
+            let storageDir = profile.appendingPathComponent("storage/default")
+            if let size = folderSize(at: storageDir), size > 0 {
+                 items.append(PrivacyItem(browser: .firefox, type: .history, path: storageDir, size: size, displayPath: "Firefox 本地存储 (\(profileName))"))
             }
         }
         
+        print("   📊 Total Firefox items: \(items.count)")
+        
         return items
     }
-    
-    // MARK: - 新扫描器实现
+
     
     private func scanRecentItems() async -> [PrivacyItem] {
         var items: [PrivacyItem] = []
         let home = FileManager.default.homeDirectoryForCurrentUser
         
-        // Recent Items Plist (Legacy but still used)
-        let recentURL = home.appendingPathComponent("Library/Preferences/com.apple.recentitems.plist")
-        if let size = fileSize(at: recentURL) {
-            items.append(PrivacyItem(browser: .system, type: .recentItems, path: recentURL, size: size, displayPath: "最近使用的项目列表"))
+        let sflBase = home.appendingPathComponent("Library/Application Support/com.apple.sharedfilelist")
+        if fileManager.fileExists(atPath: sflBase.path) {
+            let enumerator = fileManager.enumerator(at: sflBase, includingPropertiesForKeys: [.isRegularFileKey], options: [.skipsHiddenFiles, .skipsPackageDescendants])
+            while let fileURL = enumerator?.nextObject() as? URL {
+                let name = fileURL.lastPathComponent
+                if name.hasSuffix(".sfl2") || name.hasSuffix(".sfl3") {
+                    if let size = fileSize(at: fileURL) {
+                        let dirName = fileURL.deletingLastPathComponent().lastPathComponent
+                        let displayName: String
+                        if dirName.contains("ApplicationRecentDocuments") {
+                             displayName = "应用最近文档: \(name.replacingOccurrences(of: ".sfl3", with: "").replacingOccurrences(of: ".sfl2", with: "").replacingOccurrences(of: "com.apple.LSSharedFileList.", with: ""))"
+                        } else {
+                             displayName = "系统最近项目: \(name)"
+                        }
+                        
+                        items.append(PrivacyItem(browser: .system, type: .recentItems, path: fileURL, size: size, displayPath: displayName))
+                    }
+                }
+            }
         }
         
-        // Shared File List (Modern Recent Items)
-        let sharedFileList = home.appendingPathComponent("Library/Application Support/com.apple.sharedfilelist")
-        if let size = folderSize(at: sharedFileList) {
-             items.append(PrivacyItem(browser: .system, type: .recentItems, path: sharedFileList, size: size, displayPath: "共享文件列表 (最近与收藏)"))
+        // Specific plists
+        let plists = [
+            "Library/Preferences/com.apple.sidebarlists.plist",
+            "Library/Preferences/com.apple.recentitems.plist"
+        ]
+        for p in plists {
+            let url = home.appendingPathComponent(p)
+            if fileManager.fileExists(atPath: url.path), let size = fileSize(at: url) {
+                items.append(PrivacyItem(browser: .system, type: .recentItems, path: url, size: size, displayPath: "主要系统记录: \(url.lastPathComponent)"))
+            }
         }
         
+        // Recent Servers
+        let recentServersDir = home.appendingPathComponent("Library/Recent Servers")
+        if let size = folderSize(at: recentServersDir), size > 0 {
+             items.append(PrivacyItem(browser: .system, type: .recentItems, path: recentServersDir, size: size, displayPath: "最近访问的服务器"))
+        }
+
         return items
     }
     
     private func scanPermissions() async -> [PrivacyItem] {
         var items: [PrivacyItem] = []
-        // 模拟扫描权限 - 实际需要 Full Disk Access 读取 TCC.db
-        // /Library/Application Support/com.apple.TCC/TCC.db
         
-        let tccURL = URL(fileURLWithPath: "/Library/Application Support/com.apple.TCC/TCC.db")
+        // 解析 TCC 数据库，获取详细的应用权限
+        let systemTCCURL = URL(fileURLWithPath: "/Library/Application Support/com.apple.TCC/TCC.db")
+        let userTCCURL = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Application Support/com.apple.TCC/TCC.db")
         
-        // 尝试读取大小（如果有权限）
-        if let size = fileSize(at: tccURL) {
+        print("🔍 [Privacy] Scanning TCC databases...")
+        print("   System TCC: \(systemTCCURL.path)")
+        print("   User TCC: \(userTCCURL.path)")
+        
+        // 1. 解析系统级 TCC 数据库
+        let systemPerms = await parseTCCDatabase(at: systemTCCURL)
+        print("   ✅ System permissions found: \(systemPerms.count)")
+        
+        // 2. 解析用户级 TCC 数据库
+        let userPerms = await parseTCCDatabase(at: userTCCURL)
+        print("   ✅ User permissions found: \(userPerms.count)")
+        
+        // 3. 合并权限
+        let allPermissions = systemPerms + userPerms
+        print("   📊 Total permissions: \(allPermissions.count)")
+        
+        // 4. 更新到 appPermissions
+        await MainActor.run {
+            self.appPermissions = allPermissions
+        }
+        
+        // 5. 为兼容性：也创建 PrivacyItem 格式的权限记录（每个权限一项）
+        for perm in allPermissions {
             items.append(PrivacyItem(
                 browser: .system,
                 type: .permissions,
-                path: tccURL,
-                size: size,
-                displayPath: "系统应用权限数据库 (TCC)"
-            ))
-        } else {
-            // 如果没有权限，添加一个占位符提示用户 (Size 0)
-            items.append(PrivacyItem(
-                browser: .system,
-                type: .permissions,
-                path: tccURL,
-                size: 0,
-                displayPath: "应用权限 (需完全磁盘访问权限)"
+                path: URL(fileURLWithPath: "/dev/null"), // 虚拟路径
+                size: 0, // 权限本身没有文件大小
+                displayPath: "\(perm.appName) - \(perm.serviceName)"
             ))
         }
+        
+        print("   ✅ Created \(items.count) PrivacyItems for permissions")
         
         return items
     }
@@ -647,10 +1264,77 @@ class PrivacyScannerService: ObservableObject {
         if let size = folderSize(at: whatsappDataURL), size > 0 {
             items.append(PrivacyItem(browser: .system, type: .chat, path: whatsappDataURL, size: size, displayPath: "WhatsApp 数据"))
         }
+
+        // 10. Skype
+        let skypeURL = home.appendingPathComponent("Library/Application Support/Skype")
+         if let size = folderSize(at: skypeURL), size > 0 {
+            items.append(PrivacyItem(browser: .system, type: .chat, path: skypeURL, size: size, displayPath: "Skype 数据"))
+        }
         
         return items
     }
     
+    private func scanDevelopmentHistory() async -> [PrivacyItem] {
+        var items: [PrivacyItem] = []
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        
+        // 1. Terminal History
+        let shellHistories = [
+            ".zsh_history": "Zsh 命令历史",
+            ".bash_history": "Bash 命令历史",
+            ".python_history": "Python 命令历史",
+            ".node_repl_history": "Node.js 命令历史",
+            ".mysql_history": "MySQL 命令历史"
+        ]
+        
+        for (filename, displayName) in shellHistories {
+            let historyURL = home.appendingPathComponent(filename)
+            if let size = fileSize(at: historyURL) {
+                items.append(PrivacyItem(
+                    browser: .system,
+                    type: .development,
+                    path: historyURL,
+                    size: size,
+                    displayPath: displayName
+                ))
+            }
+        }
+        
+        // 2. VSCode
+        let vscodePath = home.appendingPathComponent("Library/Application Support/Code")
+        if fileManager.fileExists(atPath: vscodePath.path) {
+            // History
+            let historyURL = vscodePath.appendingPathComponent("User/History")
+            if let size = folderSize(at: historyURL), size > 0 {
+                items.append(PrivacyItem(browser: .system, type: .development, path: historyURL, size: size, displayPath: "VSCode 编辑历史"))
+            }
+            
+            // Backups
+            let backupsURL = vscodePath.appendingPathComponent("Backups")
+            if let size = folderSize(at: backupsURL), size > 0 {
+                items.append(PrivacyItem(browser: .system, type: .development, path: backupsURL, size: size, displayPath: "VSCode 工作区备份"))
+            }
+            
+            // CachedData
+            let cachedDataURL = vscodePath.appendingPathComponent("CachedData")
+            if let size = folderSize(at: cachedDataURL), size > 0 {
+                items.append(PrivacyItem(browser: .system, type: .development, path: cachedDataURL, size: size, displayPath: "VSCode 缓存数据"))
+            }
+        }
+        
+        // 3. Xcode
+        let xcodeUserData = home.appendingPathComponent("Library/Developer/Xcode/UserData")
+        if fileManager.fileExists(atPath: xcodeUserData.path) {
+            // IB Support
+            let ibSupport = xcodeUserData.appendingPathComponent("IB Support/Simulator")
+            if let size = folderSize(at: ibSupport), size > 0 {
+                 items.append(PrivacyItem(browser: .system, type: .development, path: ibSupport, size: size, displayPath: "Xcode Interface Builder 缓存"))
+            }
+        }
+        
+        return items
+    }
+
     private func fileSize(at url: URL) -> Int64? {
         // 如果没有权限读取，可能会失败
         guard let attrs = try? fileManager.attributesOfItem(atPath: url.path) else { return nil }
@@ -666,5 +1350,158 @@ class PrivacyScannerService: ObservableObject {
             }
         }
         return size
+    }
+    
+    // MARK: - TCC 数据库解析
+    
+    /// 解析 TCC 数据库，获取应用权限列表
+    private func parseTCCDatabase(at url: URL) async -> [AppPermission] {
+        var permissions: [AppPermission] = []
+        
+        // 1. 打开 SQLite 数据库
+        var db: OpaquePointer?
+        guard sqlite3_open(url.path, &db) == SQLITE_OK else {
+            print("Failed to open TCC database at \(url.path)")
+            return []
+        }
+        defer { sqlite3_close(db) }
+        
+        // 2. 查询所有权限 (client_type = 0 表示 Bundle ID)
+        let query = "SELECT service, client, auth_value, last_modified FROM access WHERE client_type = 0"
+        var statement: OpaquePointer?
+        guard sqlite3_prepare_v2(db, query, -1, &statement, nil) == SQLITE_OK else {
+            print("Failed to prepare TCC query")
+            return []
+        }
+        defer { sqlite3_finalize(statement) }
+        
+        // 3. 遍历结果
+        while sqlite3_step(statement) == SQLITE_ROW {
+            guard let servicePtr = sqlite3_column_text(statement, 0),
+                  let clientPtr = sqlite3_column_text(statement, 1) else { continue }
+            
+            let service = String(cString: servicePtr)
+            let bundleId = String(cString: clientPtr)
+            let authValue = Int(sqlite3_column_int(statement, 2))
+            let lastModified = sqlite3_column_int64(statement, 3)
+            
+            // 只包含已授权的权限 (authValue == 2 表示允许)
+            guard authValue == 2 else { continue }
+            
+            // 4. 获取应用信息
+            if let (appName, appIcon) = getAppInfo(bundleId: bundleId) {
+                let (serviceName, serviceCategory) = localizeService(service)
+                
+                let perm = AppPermission(
+                    bundleId: bundleId,
+                    appName: appName,
+                    appIcon: appIcon,
+                    service: service,
+                    serviceName: serviceName,
+                    serviceCategory: serviceCategory,
+                    authValue: authValue,
+                    lastModified: Date(timeIntervalSince1970: TimeInterval(lastModified))
+                )
+                permissions.append(perm)
+            }
+        }
+        
+        return permissions
+    }
+    
+    /// 获取应用图标和名称
+    private func getAppInfo(bundleId: String) -> (String, NSImage)? {
+        // 1. 尝试从 NSWorkspace 获取
+        if let appURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleId) {
+            let appName = FileManager.default.displayName(atPath: appURL.path)
+                .replacingOccurrences(of: ".app", with: "")
+            let appIcon = NSWorkspace.shared.icon(forFile: appURL.path)
+            return (appName, appIcon)
+        }
+        
+        // 2. 尝试从常见路径查找
+        let commonPaths = [
+            "/Applications/\(bundleId).app",
+            "/System/Applications/\(bundleId).app"
+        ]
+        
+        for path in commonPaths {
+            if FileManager.default.fileExists(atPath: path) {
+                let appName = FileManager.default.displayName(atPath: path)
+                    .replacingOccurrences(of: ".app", with: "")
+                let appIcon = NSWorkspace.shared.icon(forFile: path)
+                return (appName, appIcon)
+            }
+        }
+        
+        // 3. 降级：使用 Bundle ID，但过滤掉一些系统内部组件
+        if bundleId.contains("apple") && !bundleId.contains("com.apple.Safari") {
+            return nil // 跳过 Apple 内部组件
+        }
+        
+        let defaultIcon = NSImage(systemSymbolName: "app.fill", accessibilityDescription: nil) ?? NSImage()
+        return (bundleId, defaultIcon)
+    }
+    
+    /// 本地化权限类型
+    private func localizeService(_ service: String) -> (name: String, category: String) {
+        let isChinese = LocalizationManager.shared.currentLanguage == .chinese
+        
+        switch service {
+        case "kTCCServiceCamera":
+            return (isChinese ? "相机" : "Camera", isChinese ? "隐私" : "Privacy")
+        case "kTCCServiceMicrophone":
+            return (isChinese ? "麦克风" : "Microphone", isChinese ? "隐私" : "Privacy")
+        case "kTCCServicePhotos", "kTCCServicePhotosAdd":
+            return (isChinese ? "照片" : "Photos", isChinese ? "隐私" : "Privacy")
+        case "kTCCServiceLocation":
+            return (isChinese ? "位置" : "Location", isChinese ? "隐私" : "Privacy")
+        case "kTCCServiceContacts":
+            return (isChinese ? "通讯录" : "Contacts", isChinese ? "隐私" : "Privacy")
+        case "kTCCServiceCalendar":
+            return (isChinese ? "日历" : "Calendar", isChinese ? "隐私" : "Privacy")
+        case "kTCCServiceReminders":
+            return (isChinese ? "提醒事项" : "Reminders", isChinese ? "隐私" : "Privacy")
+        case "kTCCServiceAddressBook":
+            return (isChinese ? "通讯录" : "Address Book", isChinese ? "隐私" : "Privacy")
+        case "kTCCServiceScreenCapture":
+            return (isChinese ? "屏幕录制" : "Screen Recording", isChinese ? "隐私" : "Privacy")
+        case "kTCCServiceAccessibility":
+            return (isChinese ? "辅助功能" : "Accessibility", isChinese ? "隐私" : "Privacy")
+        case "kTCCServicePostEvent":
+            return (isChinese ? "输入监控" : "Input Monitoring", isChinese ? "隐私" : "Privacy")
+        case "kTCCServiceSystemPolicyAllFiles":
+            return (isChinese ? "完全磁盘访问" : "Full Disk Access", isChinese ? "隐私" : "Privacy")
+        case "kTCCServiceSystemPolicyDesktopFolder":
+            return (isChinese ? "桌面文件夹" : "Desktop Folder", isChinese ? "隐私" : "Privacy")
+        case "kTCCServiceSystemPolicyDocumentsFolder":
+            return (isChinese ? "文稿文件夹" : "Documents Folder", isChinese ? "隐私" : "Privacy")
+        case "kTCCServiceSystemPolicyDownloadsFolder":
+            return (isChinese ? "下载文件夹" : "Downloads Folder", isChinese ? "隐私" : "Privacy")
+        case "kTCCServiceSystemPolicyNetworkVolumes":
+            return (isChinese ? "网络卷" : "Network Volumes", isChinese ? "隐私" : "Privacy")
+        case "kTCCServiceSystemPolicyRemovableVolumes":
+            return (isChinese ? "可移动卷" : "Removable Volumes", isChinese ? "隐私" : "Privacy")
+        case "kTCCServiceFileProviderDomain":
+            return (isChinese ? "文件提供程序" : "File Provider", isChinese ? "隐私" : "Privacy")
+        case "kTCCServiceFileProviderPresence":
+            return (isChinese ? "文件提供程序状态" : "File Provider Presence", isChinese ? "隐私" : "Privacy")
+        case "kTCCServiceMediaLibrary":
+            return (isChinese ? "媒体资料库" : "Media Library", isChinese ? "隐私" : "Privacy")
+        case "kTCCServiceSiri":
+            return (isChinese ? "Siri" : "Siri", isChinese ? "隐私" : "Privacy")
+        case "kTCCServiceSpeechRecognition":
+            return (isChinese ? "语音识别" : "Speech Recognition", isChinese ? "隐私" : "Privacy")
+        case "kTCCServiceAppleEvents":
+            return (isChinese ? "自动化" : "Automation", isChinese ? "隐私" : "Privacy")
+        case "kTCCServiceBluetoothAlways":
+            return (isChinese ? "蓝牙" : "Bluetooth", isChinese ? "隐私" : "Privacy")
+        case "kTCCServiceWillow":
+            return (isChinese ? "HomeKit" : "HomeKit", isChinese ? "隐私" : "Privacy")
+        default:
+            // 未知权限类型，显示原始名称
+            let cleaned = service.replacingOccurrences(of: "kTCCService", with: "")
+            return (cleaned, isChinese ? "其他" : "Other")
+        }
     }
 }

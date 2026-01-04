@@ -310,6 +310,7 @@ class JunkCleaner: ObservableObject {
     @Published var junkItems: [JunkItem] = []
     @Published var isScanning: Bool = false
     @Published var scanProgress: Double = 0
+    @Published var hasPermissionErrors: Bool = false
     
     private let fileManager = FileManager.default
     
@@ -340,17 +341,21 @@ class JunkCleaner: ObservableObject {
         // 使用 TaskGroup 并发扫描所有垃圾类型
         var allItems: [JunkItem] = []
         
-        await withTaskGroup(of: (JunkType, [JunkItem]).self) { group in
+        await withTaskGroup(of: (JunkType, ([JunkItem], Bool)).self) { group in
             for type in safeTypes {
                 group.addTask {
-                    let typeItems = await self.scanTypeConcurrent(type)
-                    return (type, typeItems)
+                    let (typeItems, hasError) = await self.scanTypeConcurrent(type)
+                    return (type, (typeItems, hasError))
                 }
             }
             
             // 收集结果并更新进度
-            for await (_, typeItems) in group {
+            for await (_, (typeItems, hasError)) in group {
                 allItems.append(contentsOf: typeItems)
+                if hasError {
+                    await MainActor.run { self.hasPermissionErrors = true }
+                }
+                
                 await progressTracker.completeTask()
                 
                 let progress = await progressTracker.getProgress()
@@ -373,8 +378,9 @@ class JunkCleaner: ObservableObject {
     }
     
     /// 并发扫描单个类型 - 优化版，并行处理多个搜索路径
-    private func scanTypeConcurrent(_ type: JunkType) async -> [JunkItem] {
+    private func scanTypeConcurrent(_ type: JunkType) async -> ([JunkItem], Bool) {
         let searchPaths = type.searchPaths
+        var hasError = false
         
         // 预先获取已安装应用列表，仅在需要时获取 (Broken Preferences / Localizations 等可能需要)
         let installedBundleIds: Set<String>? = (type == .brokenPreferences) ? self.getAllInstalledAppBundleIds() : nil
@@ -382,13 +388,13 @@ class JunkCleaner: ObservableObject {
         // 使用 TaskGroup 并行扫描多个路径
         var allItems: [JunkItem] = []
         
-        await withTaskGroup(of: [JunkItem].self) { group in
+        await withTaskGroup(of: ([JunkItem], Bool).self) { group in
             for pathStr in searchPaths {
                 group.addTask {
                     let expandedPath = NSString(string: pathStr).expandingTildeInPath
                     let url = URL(fileURLWithPath: expandedPath)
                     
-                    guard self.fileManager.fileExists(atPath: url.path) else { return [] }
+                    guard self.fileManager.fileExists(atPath: url.path) else { return ([], false) }
                     
                     var items: [JunkItem] = []
                     
@@ -410,7 +416,7 @@ class JunkCleaner: ObservableObject {
                                  }
                              }
                         }
-                        return items
+                        return (items, false)
                     }
                     
                     if type == .unusedDiskImages {
@@ -419,47 +425,31 @@ class JunkCleaner: ObservableObject {
                             while let fileURL = enumerator.nextObject() as? URL {
                                 let ext = fileURL.pathExtension.lowercased()
                                 if ["dmg", "iso", "pkg"].contains(ext) {
-                                    // 检查是否"未使用" (例如超过 14 天未访问/修改)
-                                    // 简单判断: 仅仅扫描出来让用户决定，或者增加时间过滤
-                                    // 根据用户"完整计算"的要求，我们列出所有，但在 UI 上可以按时间排序。
-                                    // 这里我们只过滤掉显然是正在下载的 (.part, .download) - 已包含在 ext check 中
                                     if let size = try? fileURL.resourceValues(forKeys: [.fileSizeKey]).fileSize, size > 0 {
                                         items.append(JunkItem(type: type, path: fileURL, size: Int64(size)))
                                     }
                                 }
                             }
                         }
-                        return items
+                        return (items, false)
                     }
                     
                     if type == .brokenPreferences {
-                        guard let installedIds = installedBundleIds else { return [] }
+                        guard let installedIds = installedBundleIds else { return ([], false) }
                         
-                        // Get bundle IDs of currently running apps to avoid flagging their prefs
                         let runningAppIds = NSWorkspace.shared.runningApplications.compactMap { $0.bundleIdentifier }
                         
-                        // 扫描 plist 并检查是否 orphaned
                         if let contents = try? self.fileManager.contentsOfDirectory(at: url, includingPropertiesForKeys: [.fileSizeKey], options: [.skipsHiddenFiles]) {
                             for fileURL in contents where fileURL.pathExtension == "plist" {
                                 let filename = fileURL.deletingPathExtension().lastPathComponent
-                                
-                                // 排除系统偏好设置
                                 if filename.starts(with: "com.apple.") || filename.starts(with: ".") { continue }
-                                
-                                // 排除正在运行的应用
                                 let isRunning = runningAppIds.contains { runningId in
                                     filename == runningId || filename.lowercased() == runningId.lowercased()
                                 }
                                 if isRunning { continue }
-                                
-                                // 检查是否属于任何已安装的 App
-                                // 规则：文件名通常是 Bundle ID
                                 let isInstalled = installedIds.contains { bundleId in
-                                    // 精确匹配 range
-                                    // 很多时候 plist 是 com.company.app.plist, bundleId 是 com.company.app
                                     return filename == bundleId || 
                                            filename.lowercased() == bundleId.lowercased() ||
-                                           // 处理一些变体，如 com.company.app.plist vs com.company.app
                                            (filename.count > bundleId.count && filename.hasPrefix(bundleId))
                                 }
                                 
@@ -470,7 +460,7 @@ class JunkCleaner: ObservableObject {
                                 }
                             }
                         }
-                        return items
+                        return (items, false)
                     }
                     
                     // --- 通用扫描逻辑 (原有逻辑) ---
@@ -500,20 +490,21 @@ class JunkCleaner: ObservableObject {
                                 }
                             }
                         }
+                        return (items, false)
                     } catch {
-                        // 静默处理权限错误
+                        // 权限错误 - 返回 true
+                        return (items, true)
                     }
-                    
-                    return items
                 }
             }
             
-            for await pathItems in group {
+            for await (pathItems, error) in group {
                 allItems.append(contentsOf: pathItems)
+                if error { hasError = true }
             }
         }
         
-        return allItems
+        return (allItems, hasError)
     }
     
     // MARK: - 辅助分析方法

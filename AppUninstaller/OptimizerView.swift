@@ -189,7 +189,7 @@ class OptimizerService: ObservableObject {
             await executeTask(task)
             
             await MainActor.run {
-                completedTasks.insert(task)
+                _ = completedTasks.insert(task)
             }
         }
         

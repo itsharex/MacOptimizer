@@ -233,20 +233,7 @@ struct SidebarMenuItem: View {
     
     // 获取模块图标
     private var moduleIcon: String {
-        switch module {
-        case .smartClean: return "display"
-        case .cleaner: return "globe"
-        case .deepClean: return "envelope"
-        case .trash: return "trash"
-        case .privacy: return "hand.raised"
-        case .maintenance: return "wrench.and.screwdriver"
-        case .optimizer: return "bolt.fill"
-        case .monitor: return "chart.bar.xaxis"
-        case .uninstaller: return "puzzlepiece.extension"
-        case .fileExplorer: return "circle.hexagongrid"
-        case .shredder: return "doc.text.fill"
-        case .largeFiles: return "doc"
-        }
+        module.icon
     }
     
     var body: some View {

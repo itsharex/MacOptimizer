@@ -109,6 +109,7 @@ class LaunchItem: Identifiable, ObservableObject {
     let name: String
     
     @Published var isEnabled: Bool
+    @Published var isSelected: Bool = true
     
     init(url: URL) {
         self.url = url
@@ -123,7 +124,7 @@ class RunningAppItem: Identifiable, ObservableObject {
     let app: NSRunningApplication
     let name: String
     let icon: NSImage
-    @Published var isSelected: Bool = false
+    @Published var isSelected: Bool = true
     
     init(app: NSRunningApplication) {
         self.app = app

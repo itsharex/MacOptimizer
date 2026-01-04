@@ -72,10 +72,14 @@ SWIFT_FILES=(
     "${SOURCE_DIR}/SmartCleanerService.swift"
     "${SOURCE_DIR}/CircularActionButton.swift"
     "${SOURCE_DIR}/SmartCleanerView.swift"
+    "${SOURCE_DIR}/SmartScanLegacySupport.swift"
     "${SOURCE_DIR}/ShredderService.swift"
     "${SOURCE_DIR}/ShredderView.swift"
     "${SOURCE_DIR}/ShredderComponents.swift"
     "${SOURCE_DIR}/AppUninstallerApp.swift"
+    "${SOURCE_DIR}/UpdateCheckerService.swift"
+    "${SOURCE_DIR}/UpdatePopupView.swift"
+    "${SOURCE_DIR}/SettingsView.swift"
 )
 
 # 创建 App Bundle 的函数

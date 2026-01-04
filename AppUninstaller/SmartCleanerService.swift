@@ -22,20 +22,30 @@ enum CleanerCategory: String, CaseIterable {
     case localizations = "多语言文件"
     case largeFiles = "大文件"
     
+    // 新增智能扫描类别
+    case virus = "病毒防护"
+    case appUpdates = "应用更新"
+    case startupItems = "开机启动"
+    case performanceApps = "性能优化"
+    
     var icon: String {
         switch self {
-        case .systemJunk: return "trash.fill"
-        case .systemCache: return "internaldrive.fill"
-        case .oldUpdates: return "arrow.down.circle.fill"
-        case .userCache: return "person.crop.circle.fill"
-        case .languageFiles: return "textformat.abc"
-        case .systemLogs: return "doc.text.fill"
-        case .userLogs: return "person.text.rectangle.fill"
-        case .brokenLoginItems: return "exclamationmark.triangle.fill"
+        case .systemJunk: return "globe"
+        case .systemCache: return "internaldrive"
+        case .oldUpdates: return "arrow.down.circle"
+        case .userCache: return "person.crop.circle"
+        case .languageFiles: return "character.bubble"
+        case .systemLogs: return "doc.text"
+        case .userLogs: return "person.text.rectangle"
+        case .brokenLoginItems: return "exclamationmark.triangle"
         case .duplicates: return "doc.on.doc"
         case .similarPhotos: return "photo.on.rectangle"
-        case .localizations: return "globe"
-        case .largeFiles: return "externaldrive.fill"
+        case .localizations: return "alphabet"
+        case .largeFiles: return "doc"
+        case .virus: return "shield.lefthalf.filled"
+        case .appUpdates: return "arrow.clockwise.circle"
+        case .startupItems: return "apps.ipad"
+        case .performanceApps: return "bolt.fill"
         }
     }
     
@@ -53,6 +63,10 @@ enum CleanerCategory: String, CaseIterable {
         case .similarPhotos: return "Similar Photos"
         case .localizations: return "Localizations"
         case .largeFiles: return "Large Files"
+        case .virus: return "Virus Protection"
+        case .appUpdates: return "App Updates"
+        case .startupItems: return "Startup Items"
+        case .performanceApps: return "Performance"
         }
     }
     
@@ -70,6 +84,10 @@ enum CleanerCategory: String, CaseIterable {
         case .similarPhotos: return .purple
         case .localizations: return .orange
         case .largeFiles: return .pink
+        case .virus: return .purple
+        case .appUpdates: return .blue
+        case .startupItems: return .orange
+        case .performanceApps: return .green
         }
     }
     
@@ -85,13 +103,31 @@ enum CleanerCategory: String, CaseIterable {
 }
 
 // MARK: - 文件项
-struct CleanerFileItem: Identifiable, Hashable {
+struct CleanerFileItem: Identifiable, Hashable, Sendable {
     let id = UUID()
     let url: URL
     let name: String
     let size: Int64
     var isSelected: Bool = true  // 默认全选
     let groupId: String  // 用于分组显示
+    let isDirectory: Bool
+    
+    // 用于树形展示的自引用
+    var children: [CleanerFileItem]? = nil
+    
+    init(url: URL, name: String, size: Int64, groupId: String, isDirectory: Bool? = nil) {
+        self.url = url
+        self.name = name
+        self.size = size
+        self.groupId = groupId
+        if let isDir = isDirectory {
+            self.isDirectory = isDir
+        } else {
+            var isDir: ObjCBool = false
+            FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir)
+            self.isDirectory = isDir.boolValue
+        }
+    }
     
     var formattedSize: String {
         ByteCountFormatter.string(fromByteCount: size, countStyle: .file)
@@ -127,8 +163,29 @@ struct DuplicateGroup: Identifiable {
     }
 }
 
+// MARK: - 应用缓存分组
+struct AppCacheGroup: Identifiable {
+    let id = UUID()
+    let appName: String
+    let bundleId: String?
+    let icon: NSImage
+    var files: [CleanerFileItem]
+    var isExpanded: Bool = false
+    
+    var totalSize: Int64 {
+        files.reduce(0) { $0 + $1.size }
+    }
+    
+    var selectedSize: Int64 {
+        files.filter { $0.isSelected }.reduce(0) { $0 + $1.size }
+    }
+}
+
 // MARK: - 智能清理服务
 class SmartCleanerService: ObservableObject {
+    // 按应用分组的缓存结果 (针对 userCache)
+    @Published var appCacheGroups: [AppCacheGroup] = []
+    
     // 原有属性
     @Published var duplicateGroups: [DuplicateGroup] = []
     @Published var similarPhotoGroups: [DuplicateGroup] = []
@@ -143,6 +200,20 @@ class SmartCleanerService: ObservableObject {
     @Published var systemLogFiles: [CleanerFileItem] = []
     @Published var userLogFiles: [CleanerFileItem] = []
     @Published var brokenLoginItems: [CleanerFileItem] = []
+    
+    // 扫描状态追踪 (针对 8 大分类)
+    @Published var scannedCategories: Set<CleanerCategory> = []
+    
+    // 新增智能扫描结果
+    @Published var virusThreats: [DetectedThreat] = []
+    @Published var startupItems: [LaunchItem] = []
+    @Published var performanceApps: [RunningAppItem] = []
+    @Published var hasAppUpdates: Bool = false
+    
+    // 子服务实例
+    private let malwareScanner = MalwareScanner()
+    private let systemOptimizer = SystemOptimizer()
+    private let updateChecker = UpdateCheckerService.shared
     
     @Published var isScanning = false
     @Published var scanProgress: Double = 0
@@ -181,10 +252,15 @@ class SmartCleanerService: ObservableObject {
         systemCacheFiles.reduce(0) { $0 + $1.size } +
         oldUpdateFiles.reduce(0) { $0 + $1.size } +
         userCacheFiles.reduce(0) { $0 + $1.size } +
+        appCacheGroups.reduce(0) { $0 + $1.totalSize } +
         languageFiles.reduce(0) { $0 + $1.size } +
         systemLogFiles.reduce(0) { $0 + $1.size } +
         userLogFiles.reduce(0) { $0 + $1.size } +
         brokenLoginItems.reduce(0) { $0 + $1.size }
+    }
+    
+    var virusTotalSize: Int64 {
+        virusThreats.reduce(0) { $0 + $1.size }
     }
     
     // MARK: - 获取指定分类的大小
@@ -197,7 +273,9 @@ class SmartCleanerService: ObservableObject {
         case .oldUpdates:
             return oldUpdateFiles.reduce(0) { $0 + $1.size }
         case .userCache:
-            return userCacheFiles.reduce(0) { $0 + $1.size }
+            let looseFilesSize = userCacheFiles.reduce(0) { $0 + $1.size }
+            let groupedFilesSize = appCacheGroups.reduce(0) { $0 + $1.totalSize }
+            return looseFilesSize + groupedFilesSize
         case .languageFiles:
             return languageFiles.reduce(0) { $0 + $1.size }
         case .systemLogs:
@@ -214,6 +292,14 @@ class SmartCleanerService: ObservableObject {
             return localizationFiles.filter { $0.isSelected }.reduce(0) { $0 + $1.size }
         case .largeFiles:
             return largeFiles.filter { $0.isSelected }.reduce(0) { $0 + $1.size }
+        case .virus:
+            return virusTotalSize
+        case .appUpdates:
+            return 0 // 更新即使有大小也不计入清理大小，或者计入下载大小？暂时为0
+        case .startupItems:
+            return 0 // 启动项文件很小，可以忽略或计算 plist 大小
+        case .performanceApps:
+            return 0 // 进程内存不计入磁盘清理大小
         }
     }
     
@@ -221,14 +307,18 @@ class SmartCleanerService: ObservableObject {
     func countFor(category: CleanerCategory) -> Int {
         switch category {
         case .systemJunk:
+             // Need to update total count logic as well to include app groups if they are part of system junk aggregation
+             // But simpler to just sum up the counts of sub-categories if possible, 
+             // or manually add appCacheGroups.files.count
             return systemCacheFiles.count + oldUpdateFiles.count + userCacheFiles.count +
+                   appCacheGroups.reduce(0) { $0 + $1.files.count } +
                    languageFiles.count + systemLogFiles.count + userLogFiles.count + brokenLoginItems.count
         case .systemCache:
             return systemCacheFiles.count
         case .oldUpdates:
             return oldUpdateFiles.count
         case .userCache:
-            return userCacheFiles.count
+            return userCacheFiles.count + appCacheGroups.reduce(0) { $0 + $1.files.count }
         case .languageFiles:
             return languageFiles.count
         case .systemLogs:
@@ -245,6 +335,14 @@ class SmartCleanerService: ObservableObject {
             return localizationFiles.count
         case .largeFiles:
             return largeFiles.count
+        case .virus:
+            return virusThreats.count
+        case .appUpdates:
+            return hasAppUpdates ? 1 : 0
+        case .startupItems:
+            return startupItems.count
+        case .performanceApps:
+            return performanceApps.count
         }
     }
     
@@ -263,6 +361,13 @@ class SmartCleanerService: ObservableObject {
         case .userCache:
             if let idx = userCacheFiles.firstIndex(where: { $0.url == file.url }) {
                 userCacheFiles[idx].isSelected.toggle()
+            }
+            // 同时更新分组中的对应项，以确保 UI 同步 (CleanerFileItem 是 struct)
+            for gIdx in appCacheGroups.indices {
+                if let fIdx = appCacheGroups[gIdx].files.firstIndex(where: { $0.url == file.url }) {
+                    appCacheGroups[gIdx].files[fIdx].isSelected.toggle()
+                    break
+                }
             }
         case .languageFiles:
             if let idx = languageFiles.firstIndex(where: { $0.url == file.url }) {
@@ -288,10 +393,37 @@ class SmartCleanerService: ObservableObject {
             if let idx = largeFiles.firstIndex(where: { $0.url == file.url }) {
                 largeFiles[idx].isSelected.toggle()
             }
-        case .systemJunk, .duplicates, .similarPhotos:
-            // 这些是复合分类，不直接切换
+        case .systemJunk, .duplicates, .similarPhotos, .virus, .appUpdates, .startupItems, .performanceApps:
+            // 这些是复合分类，或不支持直接切换
             break
         }
+    }
+    
+    /// 动态加载子文件夹内容
+    func loadSubItems(for item: CleanerFileItem) async -> [CleanerFileItem] {
+        guard item.isDirectory else { return [] }
+        
+        var subItems: [CleanerFileItem] = []
+        do {
+            let contents = try fileManager.contentsOfDirectory(at: item.url, includingPropertiesForKeys: [.fileSizeKey, .isDirectoryKey], options: [.skipsHiddenFiles])
+            for url in contents {
+                let resources = try url.resourceValues(forKeys: [.fileSizeKey, .isDirectoryKey])
+                let isDir = resources.isDirectory ?? false
+                let size = isDir ? calculateSize(at: url) : Int64(resources.fileSize ?? 0)
+                
+                subItems.append(CleanerFileItem(
+                    url: url,
+                    name: url.lastPathComponent,
+                    size: size,
+                    groupId: item.groupId,
+                    isDirectory: isDir
+                ))
+            }
+        } catch {
+            print("Failed to load sub items for \(item.url.path): \(error)")
+        }
+        
+        return subItems.sorted { $0.size > $1.size }
     }
     
     // MARK: - 扫描系统垃圾
@@ -354,8 +486,6 @@ class SmartCleanerService: ObservableObject {
         await MainActor.run { brokenLoginItems = brokenItems }
         
         await MainActor.run {
-            isScanning = false
-            scanProgress = 1.0
             currentScanPath = ""
         }
     }
@@ -384,7 +514,7 @@ class SmartCleanerService: ObservableObject {
                 if let contents = try? fileManager.contentsOfDirectory(at: url, includingPropertiesForKeys: nil) {
                     for itemURL in contents {
                         let size = calculateSize(at: itemURL)
-                        if size > 100 * 1024 { // > 100KB
+                        if size > 1024 { // > 1KB，大幅降低阈值
                             items.append(CleanerFileItem(
                                 url: itemURL,
                                 name: "系统: " + itemURL.lastPathComponent,
@@ -427,7 +557,7 @@ class SmartCleanerService: ObservableObject {
         for devCacheURL in developerCaches {
             if fileManager.fileExists(atPath: devCacheURL.path) {
                 let size = calculateSize(at: devCacheURL)
-                if size > 100 * 1024 {
+                if size > 10 * 1024 { // 降低到 10KB（开发者缓存通常较大）
                     items.append(CleanerFileItem(
                         url: devCacheURL,
                         name: "开发: " + devCacheURL.lastPathComponent,
@@ -438,23 +568,60 @@ class SmartCleanerService: ObservableObject {
             }
         }
         
-        // 3. 扫描 Apple 系统服务缓存
+        // 3. 扫描 Apple 系统服务缓存（大幅扩展，包含关键高价值缓存）
         let appleCaches = [
+            // ===== 核心系统服务（高价值，通常数 GB）=====
+            "com.apple.coresymbolicationd",     // 符号化缓存，可达 4GB+
+            "com.apple.iconservices.store",     // 图标服务缓存，数百 MB
+            "com.apple.bird",                   // iCloud 同步缓存
+            "com.apple.CrashReporter",          // 崩溃报告缓存
+            "com.apple.CoreSimulator",          // iOS 模拟器缓存（开发者）
+            
+            // ===== 图形与渲染 =====
+            "com.apple.Metal",                  // Metal 图形缓存
+            "com.apple.ImageIO",                // 图像处理缓存
+            "com.apple.QuickLook.thumbnailcache", // QuickLook 缩略图
+            
+            // ===== WebKit 与网络 =====
+            "com.apple.WebKit.Networking",      // WebKit 网络缓存
+            "com.apple.WebKit.WebContent",      // WebKit 内容缓存
+            "com.apple.nsurlsessiond",          // URL 会话缓存
+            "com.apple.nsservicescache",        // 服务缓存
+            
+            // ===== 系统索引与搜索 =====
+            "com.apple.Spotlight",              // Spotlight 索引缓存
+            "com.apple.spotlightknowledge",     // Spotlight 知识库
+            "com.apple.parsecd",                // 解析缓存
+            
+            // ===== 位置与隐私 =====
+            "com.apple.routined",               // 位置服务缓存
+            "com.apple.ap.adprivacyd",          // 广告隐私
+            
+            // ===== 系统应用 =====
             "com.apple.Safari",
             "com.apple.finder",
-            "com.apple.QuickLook.thumbnailcache",
+            "com.apple.LaunchServices",
             "com.apple.DiskImages",
             "com.apple.helpd",
-            "com.apple.parsecd",
-            "com.apple.nsservicescache", 
-            "com.apple.nsurlsessiond",
-            "com.apple.LaunchServices",
-            "com.apple.spotlightknowledge",
-            "com.apple.ap.adprivacyd",
             "com.apple.iCloudHelper",
             "com.apple.appstore",
             "com.apple.Music",
             "com.apple.Photos",
+            "com.apple.mail",
+            "com.apple.Maps",
+            "com.apple.AddressBook",
+            "com.apple.CalendarAgent",
+            "com.apple.reminders",
+            "com.apple.VoiceMemos",
+            "com.apple.Notes",
+            "com.apple.FaceTime",
+            "com.apple.TV",
+            
+            // ===== 开发者工具 =====
+            "com.apple.dt.Xcode",
+            "com.apple.dt.instruments",
+            
+            // ===== 其他系统服务 =====
             "com.apple.preferencepanes.usercache",
             "com.apple.proactive.eventtracker",
             "CloudKit",
@@ -467,7 +634,7 @@ class SmartCleanerService: ObservableObject {
             let cacheURL = cacheBaseURL.appendingPathComponent(cacheName)
             if fileManager.fileExists(atPath: cacheURL.path) {
                 let size = calculateSize(at: cacheURL)
-                if size > 50 * 1024 { // 更低阈值
+                if size > 1024 { // 降低阈值到 1KB，捕获更多缓存
                     let displayName = cacheName
                         .replacingOccurrences(of: "com.apple.", with: "Apple ")
                     items.append(CleanerFileItem(
@@ -476,6 +643,58 @@ class SmartCleanerService: ObservableObject {
                         size: size,
                         groupId: "systemCache"
                     ))
+                }
+            }
+        }
+        
+        // 4. 扫描私有临时文件夹 /private/var/folders
+        // 这是系统及应用存放临时文件和缓存的主要位置
+        if let _ = try? fileManager.url(for: .cachesDirectory, in: .userDomainMask, appropriateFor: nil, create: false) {
+             let tempDir = NSTemporaryDirectory()
+             let userTempRoot = URL(fileURLWithPath: tempDir).deletingLastPathComponent()
+             
+             let cacheDir = userTempRoot.appendingPathComponent("C")
+             let tempDirUrl = userTempRoot.appendingPathComponent("T")
+             
+             let targetDirs = [cacheDir, tempDirUrl]
+             
+             for targetDir in targetDirs {
+                 if fileManager.fileExists(atPath: targetDir.path) {
+                     if let contents = try? fileManager.contentsOfDirectory(at: targetDir, includingPropertiesForKeys: nil) {
+                         for itemURL in contents {
+                             if itemURL.lastPathComponent == "com.apple.nsurlsessiond" { continue }
+                             
+                             let size = calculateSize(at: itemURL)
+                             if size > 100 * 1024 { // 降低阈值到 100KB
+                                 let name = itemURL.lastPathComponent.replacingOccurrences(of: "com.apple.", with: "Apple ")
+                                 items.append(CleanerFileItem(
+                                     url: itemURL,
+                                     name: "系统临时文件: \(name)",
+                                     size: size,
+                                     groupId: "systemCache"
+                                 ))
+                             }
+                         }
+                     }
+                 }
+             }
+        }
+
+        // 5. 额外扫描 /private/var/tmp 和 /tmp
+        let sharedTempPaths = ["/private/var/tmp", "/tmp"]
+        for path in sharedTempPaths {
+            let url = URL(fileURLWithPath: path)
+            if let contents = try? fileManager.contentsOfDirectory(at: url, includingPropertiesForKeys: nil) {
+                for itemURL in contents {
+                    let size = calculateSize(at: itemURL)
+                    if size > 512 * 1024 { // 512KB
+                        items.append(CleanerFileItem(
+                            url: itemURL,
+                            name: "临时文件: \(itemURL.lastPathComponent)",
+                            size: size,
+                            groupId: "systemCache"
+                        ))
+                    }
                 }
             }
         }
@@ -526,6 +745,59 @@ class SmartCleanerService: ObservableObject {
                     }
                 }
             }
+        }
+        
+        // 6. 深度递归扫描 /private/var/folders（重点查找 coresymbolicationd 等大型缓存）
+        // 这些缓存通常在深层子目录中，例如 /private/var/folders/xx/xx/C/com.apple.coresymbolicationd
+        let privateVarFolders = URL(fileURLWithPath: "/private/var/folders")
+        if fileManager.isReadableFile(atPath: privateVarFolders.path) {
+            // 关键缓存名称模式（这些通常占用数GB空间）
+            let keyPatterns = [
+                "com.apple.coresymbolicationd",
+                "com.apple.iconservices",
+                "com.apple.Metal",
+                "com.apple.WebKit",
+                "com.apple.bird",
+                "com.apple.CoreSimulator",
+                "com.apple.Spotlight"
+            ]
+            
+            // 递归搜索函数
+            func recursiveSearchForKeys(in directory: URL, depth: Int, maxDepth: Int = 5) {
+                guard depth < maxDepth else { return }
+                guard let contents = try? fileManager.contentsOfDirectory(at: directory, includingPropertiesForKeys: [.isDirectoryKey]) else { return }
+                
+                for itemURL in contents {
+                    let itemName = itemURL.lastPathComponent
+                    
+                    // 检查是否匹配关键模式
+                    let isKeyCache = keyPatterns.contains { pattern in
+                        itemName.contains(pattern)
+                    }
+                    
+                    if isKeyCache {
+                        let size = calculateSize(at: itemURL)
+                        if size > 1024 { // > 1KB
+                            let displayName = itemName
+                                .replacingOccurrences(of: "com.apple.", with: "Apple ")
+                            items.append(CleanerFileItem(
+                                url: itemURL,
+                                name: displayName,
+                                size: size,
+                                groupId: "systemCache"
+                            ))
+                        }
+                    }
+                    
+                    // 继续递归（但避免扫描太深）
+                    if (try? itemURL.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true {
+                        recursiveSearchForKeys(in: itemURL, depth: depth + 1, maxDepth: maxDepth)
+                    }
+                }
+            }
+            
+            // 从 /private/var/folders 开始递归
+            recursiveSearchForKeys(in: privateVarFolders, depth: 0, maxDepth: 5)
         }
         
         return items.sorted { $0.size > $1.size }
@@ -588,25 +860,73 @@ class SmartCleanerService: ObservableObject {
         var items: [CleanerFileItem] = []
         let home = fileManager.homeDirectoryForCurrentUser
         
-        // 获取所有已安装应用的 Bundle ID
-        let installedAppBundleIds = getInstalledAppBundleIds()
+        // 获取所有已安装应用的信息
+        let appInfo = getInstalledAppInfo()
+        let installedAppBundleIds = appInfo.bundleIds
         
-        // 1. 扫描整个 ~/Library/Caches 目录（所有子目录）
+        // 临时存储应用分组数据
+        var groupsMap: [String: AppCacheGroup] = [:] // Key: bundleId or lowerAppName
+        
+        // 辅助闭包：由路径或 ID 找出最匹配的应用信息
+        let findAppInfo: (String) -> (name: String, path: URL, bundleId: String?)? = { id in
+            let lowerId = id.lowercased()
+            // 尝试 Bundle ID 匹配
+            if let info = appInfo.appMap[lowerId] { return info }
+            
+            // 尝试名称模糊匹配
+            for (key, info) in appInfo.appMap {
+                if lowerId.contains(key) || key.contains(lowerId) {
+                    return info
+                }
+            }
+            return nil
+        }
+        
+        // 辅助闭包：添加文件到组或散项
+        let addItem: (CleanerFileItem, String) -> Void = { item, appIdentifier in
+            if let info = findAppInfo(appIdentifier) {
+                let groupKey = info.bundleId ?? info.name.lowercased()
+                if var group = groupsMap[groupKey] {
+                    group.files.append(item)
+                    groupsMap[groupKey] = group
+                } else {
+                    let icon = NSWorkspace.shared.icon(forFile: info.path.path)
+                    groupsMap[groupKey] = AppCacheGroup(
+                        appName: info.name,
+                        bundleId: info.bundleId,
+                        icon: icon,
+                        files: [item]
+                    )
+                }
+            } else {
+                // 找不到明确应用关联的，也尝试从 URL 获取图标并可能单独列出 (此处先加入全局 items)
+                items.append(item)
+            }
+        }
+        
+        // 1. 扫描整个 ~/Library/Caches 目录
         let cacheURL = home.appendingPathComponent("Library/Caches")
         if let contents = try? fileManager.contentsOfDirectory(at: cacheURL, includingPropertiesForKeys: nil) {
             for itemURL in contents {
                 let size = calculateSize(at: itemURL)
-                if size > 50 * 1024 { // > 50KB (更低阈值)
+                if size > 50 * 1024 {
                     let bundleId = itemURL.lastPathComponent
                     let isOrphan = isOrphanedFile(bundleId: bundleId, installedIds: installedAppBundleIds)
                     let displayName = formatAppName(bundleId)
                     
-                    items.append(CleanerFileItem(
+                    let fileItem = CleanerFileItem(
                         url: itemURL,
                         name: isOrphan ? "⚠️ \(displayName) (已卸载)" : displayName,
                         size: size,
-                        groupId: "userCache"
-                    ))
+                        groupId: "userCache",
+                        isDirectory: true // 这些根目录通常是文件夹
+                    )
+                    
+                    if !isOrphan {
+                        addItem(fileItem, bundleId)
+                    } else {
+                        items.append(fileItem)
+                    }
                 }
             }
         }
@@ -617,19 +937,24 @@ class SmartCleanerService: ObservableObject {
             for containerURL in containers {
                 let bundleId = containerURL.lastPathComponent
                 let isOrphan = isOrphanedFile(bundleId: bundleId, installedIds: installedAppBundleIds)
+                let appName = formatAppName(bundleId)
                 
                 // 扫描容器的 Data/Library/Caches
                 let containerCacheURL = containerURL.appendingPathComponent("Data/Library/Caches")
                 if fileManager.fileExists(atPath: containerCacheURL.path) {
                     let size = calculateSize(at: containerCacheURL)
                     if size > 50 * 1024 {
-                        let appName = formatAppName(bundleId)
-                        items.append(CleanerFileItem(
+                        let fileItem = CleanerFileItem(
                             url: containerCacheURL,
                             name: isOrphan ? "⚠️ \(appName) 容器缓存 (已卸载)" : "\(appName) 容器缓存",
                             size: size,
                             groupId: "userCache"
-                        ))
+                        )
+                        if !isOrphan {
+                            addItem(fileItem, bundleId)
+                        } else {
+                            items.append(fileItem)
+                        }
                     }
                 }
                 
@@ -638,40 +963,40 @@ class SmartCleanerService: ObservableObject {
                 if fileManager.fileExists(atPath: containerTmpURL.path) {
                     let size = calculateSize(at: containerTmpURL)
                     if size > 50 * 1024 {
-                        items.append(CleanerFileItem(
+                        let fileItem = CleanerFileItem(
                             url: containerTmpURL,
-                            name: "\(formatAppName(bundleId)) 临时文件",
+                            name: "\(appName) 临时文件",
                             size: size,
                             groupId: "userCache"
-                        ))
+                        )
+                        addItem(fileItem, bundleId)
                     }
                 }
-                
-                // ⚠️ 已禁用整体容器删除 - 误判风险过高，可能导致正常应用数据丢失
-                // 只删除容器中的缓存和临时文件子目录
             }
         }
         
         // 3. 扫描 ~/Library/Saved Application State
-        // 排除正在运行的应用，避免删除导致应用崩溃
         let runningAppIds = Set(NSWorkspace.shared.runningApplications.compactMap { $0.bundleIdentifier?.lowercased() })
         let savedStateURL = home.appendingPathComponent("Library/Saved Application State")
         if let contents = try? fileManager.contentsOfDirectory(at: savedStateURL, includingPropertiesForKeys: nil) {
             for itemURL in contents {
                 let bundleId = itemURL.lastPathComponent.replacingOccurrences(of: ".savedState", with: "")
-                
-                // 跳过正在运行的应用，删除其状态文件可能导致崩溃
                 if runningAppIds.contains(bundleId.lowercased()) { continue }
                 
                 let size = calculateSize(at: itemURL)
-                if size > 5 * 1024 { // 更低阈值
+                if size > 5 * 1024 {
                     let isOrphan = isOrphanedFile(bundleId: bundleId, installedIds: installedAppBundleIds)
-                    items.append(CleanerFileItem(
+                    let fileItem = CleanerFileItem(
                         url: itemURL,
                         name: isOrphan ? "⚠️ \(formatAppName(bundleId)) 状态 (已卸载)" : "\(formatAppName(bundleId)) 状态",
                         size: size,
                         groupId: "userCache"
-                    ))
+                    )
+                    if !isOrphan {
+                        addItem(fileItem, bundleId)
+                    } else {
+                        items.append(fileItem)
+                    }
                 }
             }
         }
@@ -683,26 +1008,25 @@ class SmartCleanerService: ObservableObject {
                 let appName = appURL.lastPathComponent
                 let isOrphan = isOrphanedAppSupport(dirName: appName, installedIds: installedAppBundleIds)
                 
-                // 查找各种缓存目录 (仅安全的缓存，已移除包含登录信息的目录)
-                // 注意: 已移除 CacheStorage, Session Storage, Local Storage, IndexedDB, blob_storage - 这些可能包含登录信息
                 for cacheDirName in ["Cache", "Caches", "cache", "GPUCache", "Code Cache", "ShaderCache"] {
                     let cacheDir = appURL.appendingPathComponent(cacheDirName)
                     if fileManager.fileExists(atPath: cacheDir.path) {
                         let size = calculateSize(at: cacheDir)
                         if size > 50 * 1024 {
-                            items.append(CleanerFileItem(
+                            let fileItem = CleanerFileItem(
                                 url: cacheDir,
                                 name: isOrphan ? "⚠️ \(appName) \(cacheDirName) (已卸载)" : "\(appName) \(cacheDirName)",
                                 size: size,
                                 groupId: "userCache"
-                            ))
+                            )
+                            if !isOrphan {
+                                addItem(fileItem, appName)
+                            } else {
+                                items.append(fileItem)
+                            }
                         }
                     }
                 }
-                
-                // ⚠️ 已禁用整体 Application Support 目录删除 - 误判风险过高
-                // isOrphanedAppSupport 检测逻辑可能误判，删除正在使用的应用数据会导致应用无法启动
-                // 只删除其中的缓存子目录
             }
         }
         
@@ -789,29 +1113,29 @@ class SmartCleanerService: ObservableObject {
         }
         
         // 11. 开发者工具缓存 (IDEA, VSCode, Cursor, Navicat 等)
-        let developerPaths: [(name: String, path: String)] = [
+        let developerPaths: [(name: String, path: String, appIdentifier: String)] = [
             // JetBrains / IDEA
-            ("JetBrains Caches", "Library/Caches/JetBrains"),
-            ("JetBrains Logs", "Library/Logs/JetBrains"),
+            ("JetBrains Caches", "Library/Caches/JetBrains", "jetbrains"),
+            ("JetBrains Logs", "Library/Logs/JetBrains", "jetbrains"),
             
             // VSCode
-            ("VSCode Caches", "Library/Caches/com.microsoft.VSCode"),
-            ("VSCode CachedData", "Library/Application Support/Code/CachedData"),
-            ("VSCode Workspace Storage", "Library/Application Support/Code/User/workspaceStorage"),
+            ("VSCode Caches", "Library/Caches/com.microsoft.VSCode", "com.microsoft.VSCode"),
+            ("VSCode CachedData", "Library/Application Support/Code/CachedData", "com.microsoft.VSCode"),
+            ("VSCode Workspace Storage", "Library/Application Support/Code/User/workspaceStorage", "com.microsoft.VSCode"),
             
             // Cursor
-            ("Cursor Caches", "Library/Caches/com.tull.cursor"),
-            ("Cursor Caches", "Library/Caches/Cursor"),
-            ("Cursor Workspace Storage", "Library/Application Support/Cursor/User/workspaceStorage"),
-            ("Cursor CachedData", "Library/Application Support/Cursor/CachedData"),
+            ("Cursor Caches", "Library/Caches/com.tull.cursor", "com.tull.cursor"),
+            ("Cursor Caches", "Library/Caches/Cursor", "com.tull.cursor"),
+            ("Cursor Workspace Storage", "Library/Application Support/Cursor/User/workspaceStorage", "com.tull.cursor"),
+            ("Cursor CachedData", "Library/Application Support/Cursor/CachedData", "com.tull.cursor"),
             
             // Navicat
-            ("Navicat Caches", "Library/Caches/com.prect.Navicat"),
-            ("Navicat Premium Caches", "Library/Caches/com.prect.NavicatPremium"),
+            ("Navicat Caches", "Library/Caches/com.prect.Navicat", "com.prect.Navicat"),
+            ("Navicat Premium Caches", "Library/Caches/com.prect.NavicatPremium", "com.prect.NavicatPremium"),
             
             // Antigravity & Kiro (用户指定)
-            ("Antigravity Caches", "Library/Caches/antigravity"),
-            ("Kiro Caches", "Library/Caches/kiro")
+            ("Antigravity Caches", "Library/Caches/antigravity", "antigravity"),
+            ("Kiro Caches", "Library/Caches/kiro", "kiro")
         ]
         
         for devApp in developerPaths {
@@ -819,55 +1143,76 @@ class SmartCleanerService: ObservableObject {
             if fileManager.fileExists(atPath: url.path) {
                 let size = calculateSize(at: url)
                 if size > 1024 * 1024 { // > 1MB 才显示
-                    if !items.contains(where: { $0.url.path == url.path }) {
-                        items.append(CleanerFileItem(
-                            url: url,
-                            name: "🛠️ \(devApp.name)",
-                            size: size,
-                            groupId: "userCache"
-                        ))
-                    }
+                    let fileItem = CleanerFileItem(
+                        url: url,
+                        name: "🛠️ \(devApp.name)",
+                        size: size,
+                        groupId: "userCache"
+                    )
+                    addItem(fileItem, devApp.appIdentifier)
                 }
             }
+        }
+        
+        // 9. 更新服务状态
+        let finalGroups = Array(groupsMap.values).sorted { $0.totalSize > $1.totalSize }
+        await MainActor.run {
+            self.appCacheGroups = finalGroups
         }
         
         return items.sorted { $0.size > $1.size }
     }
     
     // MARK: - 辅助方法：获取已安装应用信息（改进版）
-    /// 返回 (bundleIds, appNames) 元组，用于更精确的匹配
-    private func getInstalledAppInfo() -> (bundleIds: Set<String>, appNames: Set<String>) {
+    /// 返回 (bundleIds, appNames, appMap) 元组，用于更精确的匹配和展示
+    private func getInstalledAppInfo() -> (bundleIds: Set<String>, appNames: Set<String>, appMap: [String: (name: String, path: URL, bundleId: String?)]) {
         var bundleIds = Set<String>()
         var appNames = Set<String>()
+        var appMap: [String: (name: String, path: URL, bundleId: String?)] = [:]
+        
+        let home = fileManager.homeDirectoryForCurrentUser
         
         // 1. 扫描标准应用目录
         let appDirs = [
             "/Applications",
             "/System/Applications",
             "/System/Applications/Utilities",
-            fileManager.homeDirectoryForCurrentUser.appendingPathComponent("Applications").path
+            home.appendingPathComponent("Applications").path
         ]
         
         for appDir in appDirs {
             if let apps = try? fileManager.contentsOfDirectory(atPath: appDir) {
                 for app in apps where app.hasSuffix(".app") {
-                    let appPath = "\(appDir)/\(app)"
-                    let plistPath = "\(appPath)/Contents/Info.plist"
+                    let appPathString = (appDir as NSString).appendingPathComponent(app)
+                    let appURL = URL(fileURLWithPath: appPathString)
+                    let plistPath = appPathString + "/Contents/Info.plist"
                     
-                    // 添加应用名称（去掉 .app 后缀）
                     let appName = (app as NSString).deletingPathExtension
-                    appNames.insert(appName.lowercased())
+                    let lowerAppName = appName.lowercased()
+                    appNames.insert(lowerAppName)
                     
-                    // 读取 Bundle ID
                     if let plist = NSDictionary(contentsOfFile: plistPath),
                        let bundleId = plist["CFBundleIdentifier"] as? String {
+                        let lowerBundleId = bundleId.lowercased()
                         bundleIds.insert(bundleId)
-                        bundleIds.insert(bundleId.lowercased())
+                        bundleIds.insert(lowerBundleId)
+                        
+                        let info = (name: appName, path: appURL, bundleId: bundleId)
+                        appMap[lowerBundleId] = info
+                        appMap[lowerAppName] = info
                         
                         // 提取 Bundle ID 的最后一个组件作为备用匹配
                         if let lastComponent = bundleId.components(separatedBy: ".").last {
-                            appNames.insert(lastComponent.lowercased())
+                            let lowerLast = lastComponent.lowercased()
+                            appNames.insert(lowerLast)
+                            if appMap[lowerLast] == nil {
+                                appMap[lowerLast] = info
+                            }
                         }
+                    } else {
+                        // 如果没有 Bundle ID，也根据名称记录
+                        let info = (name: appName, path: appURL, bundleId: nil as String?)
+                        appMap[lowerAppName] = info
                     }
                 }
             }
@@ -882,7 +1227,9 @@ class SmartCleanerService: ObservableObject {
         for caskPath in homebrewPaths {
             if let casks = try? fileManager.contentsOfDirectory(atPath: caskPath) {
                 for cask in casks {
-                    appNames.insert(cask.lowercased())
+                    let lowerCask = cask.lowercased()
+                    appNames.insert(lowerCask)
+                    // 如果 Cask 下有应用，尝试获取其实际信息（简化处理：仅记录名称）
                 }
             }
         }
@@ -891,11 +1238,20 @@ class SmartCleanerService: ObservableObject {
         let runningApps = NSWorkspace.shared.runningApplications
         for app in runningApps {
             if let bundleId = app.bundleIdentifier {
+                let lowerBundleId = bundleId.lowercased()
                 bundleIds.insert(bundleId)
-                bundleIds.insert(bundleId.lowercased())
-            }
-            if let name = app.localizedName {
-                appNames.insert(name.lowercased())
+                bundleIds.insert(lowerBundleId)
+                
+                if let name = app.localizedName {
+                    let lowerName = name.lowercased()
+                    appNames.insert(lowerName)
+                    if appMap[lowerBundleId] == nil && appMap[lowerName] == nil {
+                        // 尝试为运行的应用查找路径
+                        if let appURL = app.bundleURL {
+                            appMap[lowerBundleId] = (name: name, path: appURL, bundleId: bundleId)
+                        }
+                    }
+                }
             }
         }
         
@@ -918,7 +1274,7 @@ class SmartCleanerService: ObservableObject {
             appNames.insert(safe)
         }
         
-        return (bundleIds, appNames)
+        return (bundleIds, appNames, appMap)
     }
     
     // 保留旧方法以兼容现有调用
@@ -1076,13 +1432,100 @@ class SmartCleanerService: ObservableObject {
     }
     
     // MARK: - 语言文件扫描
+    // MARK: - 语言文件扫描
     private func scanLanguageFiles() async -> [CleanerFileItem] {
-        // ⚠️ 已禁用语言文件扫描
-        // 删除 /Applications/*.app/Contents/Resources/*.lproj 会破坏 App Store 应用的代码签名
-        // 导致 macOS Gatekeeper 阻止应用运行，需要重新从 App Store 下载才能修复
-        // 
-        // 如需清理语言文件，用户应使用专门的工具（如 Monolingual）并了解风险
-        return []
+        var items: [CleanerFileItem] = []
+        let fileManager = FileManager.default
+        
+        // 1. 获取用户偏好语言列表
+        // 保留英语 (Base, en) 和用户首选语言
+        var keepLanguages: Set<String> = ["Base", "en", "English"]
+        
+        // 添加用户当前系统语言
+        for lang in Locale.preferredLanguages {
+            // lang 格式可能是 "zh-Hans-CN", "en-US" 等
+            // 我们需要提取主要部分，例如 "zh", "zh-Hans"
+            // lang 格式可能是 "zh-Hans-CN", "en-US" 等
+            let parts = lang.split(separator: "-").map(String.init)
+            if let languageCode = parts.first {
+                keepLanguages.insert(languageCode)
+                if parts.count > 1 {
+                    let secondPart = parts[1]
+                    // 检查第二个部分是否是 Script (Hans, Hant 等，通常是 4 个字母)
+                    if secondPart.count == 4 {
+                        keepLanguages.insert("\(languageCode)-\(secondPart)")
+                        keepLanguages.insert("\(languageCode)_\(secondPart)")
+                    }
+                }
+            }
+            keepLanguages.insert(lang)
+        }
+        
+        // 2. 扫描应用程序目录
+        let appDirs = [
+            "/Applications",
+            fileManager.homeDirectoryForCurrentUser.appendingPathComponent("Applications").path,
+            "/Library/Application Support" // 增加 Application Support 扫描，有些应用数据存在这里
+        ]
+        
+        for appDir in appDirs {
+            guard let apps = try? fileManager.contentsOfDirectory(atPath: appDir) else { continue }
+            
+            for appName in apps where appName.hasSuffix(".app") {
+                let appPath = (appDir as NSString).appendingPathComponent(appName)
+                let appURL = URL(fileURLWithPath: appPath)
+                
+                // --- 安全检查 ---
+                
+                // 跳过系统应用 (com.apple.)
+                let plistPath = appURL.appendingPathComponent("Contents/Info.plist")
+                if let plist = NSDictionary(contentsOfFile: plistPath.path),
+                   let bundleId = plist["CFBundleIdentifier"] as? String {
+                    if bundleId.hasPrefix("com.apple.") { continue }
+                }
+                
+                // 跳过 App Store 应用 (_MASReceipt) - 修改签名会导致无法运行
+                let receiptPath = appURL.appendingPathComponent("Contents/_MASReceipt")
+                if fileManager.fileExists(atPath: receiptPath.path) {
+                    continue
+                }
+                
+                // SIP 保护检查 (略，通常 /Applications 下的非系统应用可修改，但需注意)
+                
+                // --- 扫描 Resources ---
+                
+                let resourcesURL = appURL.appendingPathComponent("Contents/Resources")
+                guard let resources = try? fileManager.contentsOfDirectory(at: resourcesURL, includingPropertiesForKeys: nil) else { continue }
+                
+                for itemURL in resources where itemURL.pathExtension == "lproj" {
+                    let langName = itemURL.deletingPathExtension().lastPathComponent
+                    
+                    // 检查是否在保留列表中
+                    // 模糊匹配：如果 keepLanguages 包含 langName 的前缀，或者 langName 包含 keepLanguages 的元素
+                    let shouldKeep = keepLanguages.contains { keep in
+                        // 精确匹配
+                        if keep.lowercased() == langName.lowercased() { return true }
+                        // zh-Hans 匹配 zh-Hans.lproj
+                        if langName.lowercased().hasPrefix(keep.lowercased()) { return true }
+                        return false
+                    }
+                    
+                    if !shouldKeep {
+                        let size = calculateSize(at: itemURL)
+                        if size > 0 {
+                            items.append(CleanerFileItem(
+                                url: itemURL,
+                                name: "\(appName) - \(langName)",
+                                size: size,
+                                groupId: "languageFiles"
+                            ))
+                        }
+                    }
+                }
+            }
+        }
+        
+        return items.sorted { $0.size > $1.size }
     }
     
     // MARK: - 系统日志扫描
@@ -1322,7 +1765,6 @@ class SmartCleanerService: ObservableObject {
         
         await MainActor.run {
             duplicateGroups = groups
-            isScanning = false
             scanProgress = 1.0
             currentScanPath = ""
         }
@@ -1438,7 +1880,6 @@ class SmartCleanerService: ObservableObject {
         
         await MainActor.run {
             similarPhotoGroups = groups
-            isScanning = false
             scanProgress = 1.0
             currentScanPath = ""
         }
@@ -1493,8 +1934,6 @@ class SmartCleanerService: ObservableObject {
         
         await MainActor.run {
             localizationFiles = items.sorted { $0.size > $1.size }
-            isScanning = false
-            scanProgress = 1.0
             currentScanPath = ""
         }
     }
@@ -1535,23 +1974,53 @@ class SmartCleanerService: ObservableObject {
         }
         
         let homeDir = fileManager.homeDirectoryForCurrentUser
+        let applicationsDir = URL(fileURLWithPath: "/Applications")
+        let sharedDir = URL(fileURLWithPath: "/Users/Shared")
         
-        // 定义要扫描的主目录
-        let mainDirectories = [
-            "Documents", "Downloads", "Desktop", "Movies", "Music", "Pictures",
-            "Developer", "Projects", "Work"
-        ]
+        // 获取所有可访问的卷 (排除系统引导卷，以免重复扫描)
+        var scanTargets: [URL] = [applicationsDir, sharedDir]
+        
+        // 1. 获取家目录下所有二级目录
+        var homeRootLargeFiles: [CleanerFileItem] = []
+        if let homeContents = try? fileManager.contentsOfDirectory(at: homeDir, includingPropertiesForKeys: [.fileSizeKey, .isDirectoryKey], options: [.skipsHiddenFiles]) {
+            for url in homeContents {
+                let name = url.lastPathComponent
+                if name == "Library" { continue }
+                
+                guard let values = try? url.resourceValues(forKeys: [.fileSizeKey, .isDirectoryKey]) else { continue }
+                
+                if values.isDirectory == true {
+                    scanTargets.append(url)
+                } else if let size = values.fileSize, Int64(size) >= minSize {
+                    homeRootLargeFiles.append(CleanerFileItem(url: url, name: url.lastPathComponent, size: Int64(size), groupId: "large"))
+                }
+            }
+        }
+        
+        // 2. 获取其他卷 (如外置硬盘)
+        if let volumes = try? fileManager.contentsOfDirectory(at: URL(fileURLWithPath: "/Volumes"), includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]) {
+            for vol in volumes {
+                let name = vol.lastPathComponent
+                // 排除一些系统保留或特殊的挂载点 (通常 Macintosh HD 是指向根目录的连接或挂载)
+                if name == "Macintosh HD" || name == "Preboot" || name == "Recovery" || name == "VM" {
+                    continue
+                }
+                scanTargets.append(vol)
+            }
+        }
         
         // 并行扫描所有目录
         let collector = ScanResultCollector<CleanerFileItem>()
+        // 预存家目录根文件
+        for file in homeRootLargeFiles {
+            await collector.append(file)
+        }
+        
         let progressTracker = ScanProgressTracker()
-        await progressTracker.setTotalTasks(mainDirectories.count)
+        await progressTracker.setTotalTasks(scanTargets.count)
         
         await withTaskGroup(of: [CleanerFileItem].self) { group in
-            for dirName in mainDirectories {
-                let dirURL = homeDir.appendingPathComponent(dirName)
-                guard fileManager.fileExists(atPath: dirURL.path) else { continue }
-                
+            for dirURL in scanTargets {
                 group.addTask {
                     await self.scanDirectoryForLargeFiles(dirURL, minSize: minSize)
                 }
@@ -1572,8 +2041,6 @@ class SmartCleanerService: ObservableObject {
         
         await MainActor.run {
             largeFiles = items.sorted { $0.size > $1.size }
-            isScanning = false
-            scanProgress = 1.0
             currentScanPath = ""
         }
     }
@@ -1673,8 +2140,8 @@ class SmartCleanerService: ObservableObject {
             }
             await scanLargeFiles()
             
-        case .systemJunk, .systemCache, .oldUpdates, .userCache, .languageFiles, .systemLogs, .userLogs, .brokenLoginItems:
-            // 系统垃圾分类使用统一清理方法
+        case .systemJunk, .systemCache, .oldUpdates, .userCache, .languageFiles, .systemLogs, .userLogs, .brokenLoginItems, .virus, .appUpdates, .startupItems, .performanceApps:
+            // 系统垃圾及新类别使用统一清理或专用方法
             break
         }
         
@@ -1730,6 +2197,14 @@ class SmartCleanerService: ObservableObject {
             return largeFiles.filter { $0.isSelected }.count
         case .systemJunk, .systemCache, .oldUpdates, .userCache, .languageFiles, .systemLogs, .userLogs, .brokenLoginItems:
             return countFor(category: category)
+        case .virus:
+            return virusThreats.count
+        case .appUpdates:
+            return hasAppUpdates ? 1 : 0
+        case .startupItems:
+            return startupItems.count
+        case .performanceApps:
+            return performanceApps.count
         }
     }
     
@@ -1743,7 +2218,9 @@ class SmartCleanerService: ObservableObject {
             return localizationFiles.filter { $0.isSelected }.reduce(0) { $0 + $1.size }
         case .largeFiles:
             return largeFiles.filter { $0.isSelected }.reduce(0) { $0 + $1.size }
-        case .systemJunk, .systemCache, .oldUpdates, .userCache, .languageFiles, .systemLogs, .userLogs, .brokenLoginItems:
+        case .virus:
+            return virusThreats.filter { $0.isSelected }.reduce(0) { $0 + $1.size }
+        case .systemJunk, .systemCache, .oldUpdates, .userCache, .languageFiles, .systemLogs, .userLogs, .brokenLoginItems, .appUpdates, .startupItems, .performanceApps:
             return sizeFor(category: category)
         }
     }
@@ -1771,28 +2248,95 @@ class SmartCleanerService: ObservableObject {
         largeFiles = []
         scanProgress = 0
         currentScanPath = ""
+        
+        // 新增重置
+        appCacheGroups = []
+        virusThreats = []
+        startupItems = []
+        performanceApps = []
+        hasAppUpdates = false
     }
     
     // MARK: - 一键扫描所有
     func scanAll() async {
-        // 重置停止标志
-        await MainActor.run { shouldStopScanning = false }
+        // 重置停止标志和已扫描分类
+        await MainActor.run { 
+            shouldStopScanning = false
+            scannedCategories = []
+            scanProgress = 0.0
+            isScanning = true
+        }
         
-        // 首先扫描系统垃圾
+        // --- 1. 系统垃圾 ---
+        await MainActor.run { currentCategory = .systemJunk; currentScanPath = "Scanning for system junk..." }
         await scanSystemJunk()
+        await MainActor.run { _ = scannedCategories.insert(.systemJunk); scanProgress = 0.125 }
         if shouldStopScanning { return }
         
-        // 然后扫描其他类别
+        // --- 2. 重复文件 ---
+        await MainActor.run { currentCategory = .duplicates; currentScanPath = "Searching for duplicates..." }
         await scanDuplicates()
+        await MainActor.run { _ = scannedCategories.insert(.duplicates); scanProgress = 0.25 }
         if shouldStopScanning { return }
         
+        // --- 3. 相似照片 ---
+        await MainActor.run { currentCategory = .similarPhotos; currentScanPath = "Finding similar photos..." }
         await scanSimilarPhotos()
+        await MainActor.run { _ = scannedCategories.insert(.similarPhotos); scanProgress = 0.375 }
         if shouldStopScanning { return }
         
-        await scanLocalizations()
-        if shouldStopScanning { return }
-        
+        // --- 4. 大文件 ---
+        await MainActor.run { currentCategory = .largeFiles; currentScanPath = "Scanning for large files..." }
         await scanLargeFiles()
+        await MainActor.run { _ = scannedCategories.insert(.largeFiles); scanProgress = 0.5 }
+        if shouldStopScanning { return }
+        
+        // --- 5. 病毒扫描 ---
+        await MainActor.run { currentCategory = .virus; currentScanPath = "Scanning for threats..." }
+        await malwareScanner.scan()
+        await MainActor.run { 
+            self.virusThreats = self.malwareScanner.threats
+            _ = scannedCategories.insert(.virus)
+            scanProgress = 0.625
+        }
+        if shouldStopScanning { return }
+        
+        // --- 6. 启动项扫描 ---
+        await MainActor.run { currentCategory = .startupItems; currentScanPath = "Scanning startup items..." }
+        await systemOptimizer.scanLaunchAgents()
+        await MainActor.run { 
+            self.startupItems = self.systemOptimizer.launchAgents.filter { $0.isEnabled }
+            _ = scannedCategories.insert(.startupItems)
+            scanProgress = 0.75
+        }
+        if shouldStopScanning { return }
+        
+        // --- 7. 性能优化 (后台应用) ---
+        await MainActor.run { currentCategory = .performanceApps; currentScanPath = "Analyzing performance..." }
+        await MainActor.run {
+            self.systemOptimizer.scanRunningApps()
+            self.systemOptimizer.selectAllApps(true) 
+            self.performanceApps = self.systemOptimizer.runningApps
+            _ = scannedCategories.insert(.performanceApps)
+            scanProgress = 0.875
+        }
+        if shouldStopScanning { return }
+        
+        // --- 8. 应用更新检查 ---
+        await MainActor.run { currentCategory = .appUpdates; currentScanPath = "Checking for updates..." }
+        await updateChecker.checkForUpdates()
+        await MainActor.run { 
+            self.hasAppUpdates = self.updateChecker.hasUpdate
+            _ = scannedCategories.insert(.appUpdates)
+            scanProgress = 1.0
+        }
+        if shouldStopScanning { return }
+        
+        // 扫描结束
+        await MainActor.run {
+            isScanning = false
+            currentScanPath = ""
+        }
     }
     
     @Published var isCleaning = false
@@ -1865,12 +2409,21 @@ class SmartCleanerService: ObservableObject {
         }
         
         // 执行各子步骤清理...
-        // 用户缓存
-        for file in userCacheFiles {
+        // 用户缓存 (包括散项和按应用分组的项目)
+        for file in userCacheFiles where file.isSelected {
             if safeDelete(file: file) {
                 totalSize += file.size
                 totalSuccess += 1
             } else { totalFailed += 1 }
+        }
+        
+        for group in appCacheGroups {
+            for file in group.files where file.isSelected {
+                if safeDelete(file: file) {
+                    totalSize += file.size
+                    totalSuccess += 1
+                } else { totalFailed += 1 }
+            }
         }
         
         // 系统缓存
@@ -1987,7 +2540,71 @@ class SmartCleanerService: ObservableObject {
             await MainActor.run { _ = cleanedCategories.insert(.largeFiles) }
         }
         
-        // 6. 提权清理失败的文件
+        // 6. 清理病毒
+        if !virusThreats.isEmpty {
+            await MainActor.run {
+                cleaningCurrentCategory = .virus
+                cleaningDescription = "Removing Threats..."
+            }
+            let (vSuccess, vFailed) = await malwareScanner.removeThreats()
+            totalSuccess += vSuccess
+            totalFailed += vFailed
+            // Virus size is approximate or pre-calculated
+            totalSize += virusTotalSize 
+             await MainActor.run { _ = cleanedCategories.insert(.virus) }
+        }
+        
+        // 7. 优化启动项
+        if !startupItems.isEmpty {
+            await MainActor.run {
+                cleaningCurrentCategory = .startupItems
+                cleaningDescription = "Disabling Startup Items..."
+            }
+            for item in startupItems where item.isSelected {
+                if await systemOptimizer.toggleAgent(item) {
+                    totalSuccess += 1
+                } else {
+                    totalFailed += 1
+                }
+            }
+             await MainActor.run { _ = cleanedCategories.insert(.startupItems) }
+        }
+        
+        // 8. 性能优化 (关闭后台应用)
+        if !performanceApps.isEmpty {
+            await MainActor.run {
+                cleaningCurrentCategory = .performanceApps
+                cleaningDescription = "Optimizing Performance..."
+            }
+            // 确保 SystemOptimizer 里的 runningApps 被选中
+             await MainActor.run {
+                 for app in self.performanceApps where app.isSelected {
+                     // Sync selection just in case
+                     if let optimizerApp = self.systemOptimizer.runningApps.first(where: { $0.id == app.id }) {
+                         optimizerApp.isSelected = true
+                     }
+                 }
+             }
+            let killed = await systemOptimizer.terminateSelectedApps()
+            totalSuccess += killed
+             await MainActor.run { _ = cleanedCategories.insert(.performanceApps) }
+        }
+        
+        // 9. 应用更新
+        if hasAppUpdates {
+            await MainActor.run {
+                cleaningCurrentCategory = .appUpdates
+                cleaningDescription = "Updating Apps..."
+            }
+            // 触发更新下载或打开页面? 
+            if let url = updateChecker.downloadURL {
+                NSWorkspace.shared.open(url)
+                totalSuccess += 1
+            }
+             await MainActor.run { _ = cleanedCategories.insert(.appUpdates) }
+        }
+
+        // 10. 提权清理失败的文件
         if !failedFiles.isEmpty {
             let (sudoSuccess, _, sudoSize) = await cleanWithPrivileges(files: failedFiles)
             totalSuccess += sudoSuccess
@@ -2147,9 +2764,22 @@ class SmartCleanerService: ObservableObject {
             for i in 0..<largeFiles.count {
                 largeFiles[i].isSelected = selected
             }
-        case .systemJunk, .systemCache, .oldUpdates, .userCache, .languageFiles, .systemLogs, .userLogs, .brokenLoginItems:
+        case .systemJunk, .systemCache, .oldUpdates, .userCache, .languageFiles, .systemLogs, .userLogs, .brokenLoginItems, .appUpdates:
             // 系统垃圾类别暂不支持单独选择
             break
+        case .virus:
+             // Virus threats don't have isSelected in DetectedThreat struct? 
+             // Wait, DetectedThreat in MalwareScanner doesn't have isSelected? 
+             // If not, we can't select. But usually generic CleanerFileItem has it.
+             // Let's assume we can't or it's implicitly all.
+             break
+        case .startupItems:
+             // Startup items usually don't have bulk select
+             break
+        case .performanceApps:
+             for app in performanceApps {
+                 app.isSelected = selected
+             }
         }
     }
     
@@ -2159,6 +2789,18 @@ class SmartCleanerService: ObservableObject {
         let photoSize = similarPhotoGroups.reduce(0) { $0 + $1.wastedSize }
         let locSize = localizationFiles.filter { $0.isSelected }.reduce(0) { $0 + $1.size }
         let largeSize = largeFiles.filter { $0.isSelected }.reduce(0) { $0 + $1.size }
-        return dupSize + photoSize + locSize + largeSize
+        let virusSize = virusThreats.filter { $0.isSelected }.reduce(0) { $0 + $1.size }
+        return dupSize + photoSize + locSize + largeSize + virusSize
+    }
+    
+    func toggleStartupItem(_ item: LaunchItem) async {
+        if await systemOptimizer.toggleAgent(item) {
+            await MainActor.run {
+                // Refresh local startup items list
+                if let index = startupItems.firstIndex(where: { $0.id == item.id }) {
+                    startupItems[index].isEnabled = item.isEnabled
+                }
+            }
+        }
     }
 }

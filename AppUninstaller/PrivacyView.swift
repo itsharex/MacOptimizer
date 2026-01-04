@@ -21,6 +21,7 @@ struct PrivacyView: View {
         case recentItems
         case wifi
         case chat
+        case development
         case browser(BrowserType)
         
         static func == (lhs: SidebarCategory, rhs: SidebarCategory) -> Bool {
@@ -29,6 +30,7 @@ struct PrivacyView: View {
             case (.recentItems, .recentItems): return true
             case (.wifi, .wifi): return true
             case (.chat, .chat): return true
+            case (.development, .development): return true
             case (.browser(let b1), .browser(let b2)): return b1 == b2
             default: return false
             }
@@ -40,6 +42,7 @@ struct PrivacyView: View {
             case .recentItems: hasher.combine(1)
             case .wifi: hasher.combine(2)
             case .chat: hasher.combine(3)
+            case .development: hasher.combine(5)
             case .browser(let b): 
                 hasher.combine(4)
                 hasher.combine(b)
@@ -52,6 +55,7 @@ struct PrivacyView: View {
             case .recentItems: return LocalizationManager.shared.currentLanguage == .chinese ? "最近项目列表" : "Recent Items List"
             case .wifi: return LocalizationManager.shared.currentLanguage == .chinese ? "Wi-Fi 网络" : "Wi-Fi Networks"
             case .chat: return LocalizationManager.shared.currentLanguage == .chinese ? "聊天信息" : "Chat Data"
+            case .development: return LocalizationManager.shared.currentLanguage == .chinese ? "开发痕迹" : "Development Traces"
             case .browser(let b): return b.rawValue
             }
         }
@@ -62,6 +66,7 @@ struct PrivacyView: View {
             case .recentItems: return "clock"
             case .wifi: return "wifi"
             case .chat: return "message"
+            case .development: return "terminal"
             case .browser(let b): return b.icon
             }
         }
@@ -430,6 +435,12 @@ struct PrivacyView: View {
                     if chatCount > 0 {
                         categoryRow(for: .chat, count: chatCount)
                     }
+                    
+                    // Development
+                    let devCount = service.privacyItems.filter { $0.type == .development }.count
+                    if devCount > 0 {
+                        categoryRow(for: .development, count: devCount)
+                    }
                 }
                 .padding(.horizontal, 12)
             }
@@ -438,14 +449,79 @@ struct PrivacyView: View {
     
     // Helper to build a clickable row
     private func categoryRow(for item: SidebarCategory, count: Int) -> some View {
-        PrivacyCategoryRow(
+        let isAllSelected = isCategoryFullySelected(item)
+        let appIcon = getAppIconForCategory(item)
+        
+        return PrivacyCategoryRow(
             icon: item.icon,
+            appIcon: appIcon,
             title: item.title,
             count: count,
-            isSelected: selectedSidebarItem == item
+            isSelected: selectedSidebarItem == item,
+            isChecked: isAllSelected,
+            onCheckToggle: { toggleCategorySelection(item) }
         )
         .onTapGesture {
             selectedSidebarItem = item
+        }
+    }
+    
+    private func isCategoryFullySelected(_ category: SidebarCategory) -> Bool {
+        let items = itemsForCategory(category)
+        return !items.isEmpty && items.allSatisfy { $0.isSelected }
+    }
+    
+    private func itemsForCategory(_ category: SidebarCategory) -> [PrivacyItem] {
+        switch category {
+        case .permissions:
+            return service.privacyItems.filter { $0.type == .permissions }
+        case .recentItems:
+            return service.privacyItems.filter { $0.type == .recentItems }
+        case .wifi:
+            return service.privacyItems.filter { $0.type == .wifi }
+        case .chat:
+            return service.privacyItems.filter { $0.type == .chat }
+        case .development:
+            return service.privacyItems.filter { $0.type == .development }
+        case .browser(let b):
+            return service.privacyItems.filter { $0.browser == b }
+        }
+    }
+    
+    private func toggleCategorySelection(_ category: SidebarCategory) {
+        let items = itemsForCategory(category)
+        let allSelected = items.allSatisfy { $0.isSelected }
+        let newValue = !allSelected
+        
+        for item in items {
+            service.toggleSelection(for: item.id)
+            // Since toggleSelection toggles, we need to set it directly
+        }
+        // Actually, we need to set all to the same value
+        for i in 0..<service.privacyItems.count {
+            let item = service.privacyItems[i]
+            if itemsForCategory(category).contains(where: { $0.id == item.id }) {
+                service.privacyItems[i].isSelected = newValue
+            }
+        }
+        service.objectWillChange.send()
+    }
+    
+    private func getAppIconForCategory(_ category: SidebarCategory) -> NSImage? {
+        switch category {
+        case .browser(let b):
+            switch b {
+            case .chrome:
+                return NSWorkspace.shared.icon(forFile: "/Applications/Google Chrome.app")
+            case .safari:
+                return NSWorkspace.shared.icon(forFile: "/Applications/Safari.app")
+            case .firefox:
+                return NSWorkspace.shared.icon(forFile: "/Applications/Firefox.app")
+            case .system:
+                return nil
+            }
+        default:
+            return nil
         }
     }
     
@@ -462,12 +538,10 @@ struct PrivacyView: View {
             }
             .padding(8)
             
-            List {
-                ForEach(filteredItems) { item in
-                    PrivacyRow(item: item, service: service)
-                        .listRowBackground(Color.clear)
-                        .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
-                }
+            List(filteredItems, children: \.children) { item in
+                PrivacyRow(item: item, service: service)
+                    .listRowBackground(Color.clear)
+                    .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
             }
             .listStyle(.plain)
             .scrollContentBackground(.hidden)
@@ -484,6 +558,8 @@ struct PrivacyView: View {
             return service.privacyItems.filter { $0.type == .wifi }
         case .chat:
             return service.privacyItems.filter { $0.type == .chat }
+        case .development:
+            return service.privacyItems.filter { $0.type == .development }
         case .browser(let b):
             return service.privacyItems.filter { $0.browser == b }
         }
@@ -492,24 +568,50 @@ struct PrivacyView: View {
     private var resultsBottomBar: some View {
         HStack {
             Spacer()
+            
             Button(action: startClean) {
                 ZStack {
+                    // Outer ring
                     Circle()
-                    .fill(Color.white.opacity(0.2))
-                    .frame(width: 70, height: 70)
+                        .stroke(Color.white.opacity(0.3), lineWidth: 3)
+                        .frame(width: 80, height: 80)
+                    
+                    // Inner filled circle
+                    Circle()
+                        .fill(Color.white.opacity(0.15))
+                        .frame(width: 70, height: 70)
                     
                     VStack(spacing: 2) {
                         Text(loc.currentLanguage == .chinese ? "移除" : "Remove")
-                            .font(.system(size: 14))
+                            .font(.system(size: 14, weight: .medium))
                     }
                     .foregroundColor(.white)
                 }
             }
             .buttonStyle(.plain)
+            
+            // Selection count
+            Text("\(selectedItemCount) 项")
+                .font(.system(size: 14))
+                .foregroundColor(.white.opacity(0.8))
+                .padding(.leading, 8)
+            
             Spacer()
         }
         .frame(height: 100)
         .background(Color.black.opacity(0.3))
+    }
+    
+    private var selectedItemCount: Int {
+        var count = 0
+        func countSelected(_ items: [PrivacyItem]) {
+            for item in items {
+                if item.isSelected { count += 1 }
+                if let children = item.children { countSelected(children) }
+            }
+        }
+        countSelected(service.privacyItems)
+        return count
     }
     
     private func selectFirstAvailableCategory() {
@@ -518,6 +620,7 @@ struct PrivacyView: View {
         else if let b = BrowserType.allCases.first(where: { br in service.privacyItems.contains(where: { $0.browser == br }) }) { selectedSidebarItem = .browser(b) }
         else if service.privacyItems.contains(where: { $0.type == .wifi }) { selectedSidebarItem = .wifi }
         else if service.privacyItems.contains(where: { $0.type == .chat }) { selectedSidebarItem = .chat }
+        else if service.privacyItems.contains(where: { $0.type == .development }) { selectedSidebarItem = .development }
     }
 
     
@@ -721,27 +824,54 @@ struct FeatureRow: View {
 
 struct PrivacyCategoryRow: View {
     let icon: String
+    var appIcon: NSImage? = nil
     let title: String
     let count: Int
     let isSelected: Bool
+    var isChecked: Bool = false
+    var onCheckToggle: (() -> Void)? = nil
     var isHidden: Bool = false
     
     var body: some View {
         if !isHidden {
-            HStack {
-                // Radio button mock
-                Circle()
-                    .stroke(Color.white.opacity(0.5), lineWidth: 1)
-                    .frame(width: 16, height: 16)
-                    .overlay(
-                        Circle()
-                            .fill(isSelected ? Color.blue : Color.clear)
-                            .frame(width: 8, height: 8)
-                    )
+            HStack(spacing: 10) {
+                // Checkbox
+                Button(action: { onCheckToggle?() }) {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 4)
+                            .stroke(Color.white.opacity(0.5), lineWidth: 1.5)
+                            .frame(width: 18, height: 18)
+                        
+                        if isChecked {
+                            RoundedRectangle(cornerRadius: 3)
+                                .fill(Color.blue)
+                                .frame(width: 14, height: 14)
+                            
+                            Image(systemName: "checkmark")
+                                .font(.system(size: 10, weight: .bold))
+                                .foregroundColor(.white)
+                        }
+                    }
+                }
+                .buttonStyle(.plain)
                 
-                Image(systemName: icon)
-                    .frame(width: 24)
-                    .foregroundColor(.white) // design colorful icons based on type
+                // App Icon or SF Symbol
+                if let nsImage = appIcon {
+                    Image(nsImage: nsImage)
+                        .resizable()
+                        .frame(width: 28, height: 28)
+                        .cornerRadius(6)
+                } else {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 6)
+                            .fill(iconBackgroundColor)
+                            .frame(width: 28, height: 28)
+                        
+                        Image(systemName: icon)
+                            .font(.system(size: 14))
+                            .foregroundColor(.white)
+                    }
+                }
                 
                 Text(title)
                     .foregroundColor(.white)
@@ -751,13 +881,24 @@ struct PrivacyCategoryRow: View {
                 
                 Text("\(count) 项")
                     .font(.caption)
-                    .foregroundColor(.white.opacity(0.5))
+                    .foregroundColor(.white.opacity(0.6))
             }
-            .padding(.vertical, 8)
+            .padding(.vertical, 10)
             .padding(.horizontal, 12)
             .contentShape(Rectangle())
-            .background(isSelected ? Color.white.opacity(0.1) : Color.clear)
+            .background(isSelected ? Color.white.opacity(0.15) : Color.clear)
             .cornerRadius(8)
+        }
+    }
+    
+    private var iconBackgroundColor: Color {
+        switch icon {
+        case "lock.shield": return Color.purple.opacity(0.8)
+        case "clock": return Color.blue.opacity(0.8)
+        case "wifi": return Color.cyan.opacity(0.8)
+        case "message": return Color.green.opacity(0.8)
+        case "terminal": return Color.orange.opacity(0.8)
+        default: return Color.gray.opacity(0.5)
         }
     }
 }
@@ -799,29 +940,61 @@ struct PrivacyRow: View {
         HStack {
             Toggle("", isOn: Binding(
                 get: { item.isSelected },
-                set: { newValue in
-                    if let index = service.privacyItems.firstIndex(where: { $0.id == item.id }) {
-                        service.privacyItems[index].isSelected = newValue
-                    }
-                    service.objectWillChange.send()
+                set: { _ in
+                    service.toggleSelection(for: item.id)
                 }
             ))
             .toggleStyle(CheckboxStyle())
             .labelsHidden()
             
-            Image(systemName: item.type.icon)
-                .foregroundColor(.white)
+            // Icon
+            Group {
+                if let customIcon = getIconForType(item) {
+                     Image(systemName: customIcon)
+                } else {
+                     Image(systemName: item.type.icon)
+                }
+            }
+            .foregroundColor(.white)
+            .frame(width: 20)
             
-            Text(item.displayPath)
+            // Name & Count Extraction
+            let components = item.displayPath.components(separatedBy: " - ")
+            let name = components.first ?? item.displayPath
+            let countInfo = components.count > 1 ? components.last : nil
+            
+            Text(name)
                 .font(.system(size: 13))
                 .foregroundColor(.white)
             
             Spacer()
             
-            Text(ByteCountFormatter.string(fromByteCount: item.size, countStyle: .file))
-                .font(.system(size: 12))
-                .foregroundColor(.white.opacity(0.6))
+            if let countText = countInfo {
+                // If we have a specific count (e.g. "1316 条记录"), show it prominently
+                Text(countText)
+                    .font(.system(size: 13))
+                    .foregroundColor(.white.opacity(0.9))
+                    .padding(.trailing, 8)
+            } else {
+                // Otherwise show size
+                Text(ByteCountFormatter.string(fromByteCount: item.size, countStyle: .file))
+                    .font(.system(size: 12))
+                    .foregroundColor(.white.opacity(0.6))
+            }
         }
         .padding(.vertical, 4)
     }
+    
+    // Helper to get better icons based on the display path content
+    private func getIconForType(_ item: PrivacyItem) -> String? {
+        let path = item.displayPath.lowercased()
+        if path.contains("cookie") { return "cookie" } // 需要 SF Symbols 3.0+ for cookie, fallback to circle.grid.crosh
+        if path.contains("下载") || path.contains("downloads") { return "arrow.down.circle" }
+        if path.contains("密码") || path.contains("password") { return "key.fill" }
+        if path.contains("自动填充") || path.contains("autofill") { return "text.cursor" }
+        if path.contains("浏览历史") || path.contains("history") { return "clock" }
+        if path.contains("搜索") || path.contains("search") { return "magnifyingglass" }
+        return nil
+    }
 }
+

@@ -13,7 +13,7 @@ struct SmartCleanerView: View {
     // 导航绑定 - 用于跳转到其他页面
     @Binding var selectedModule: AppModule
     
-    // 使用共享的服务管理器，切换视图时扫描状态不会丢失
+    // 使用共享的服务管理器
     @ObservedObject private var service = ScanServiceManager.shared.smartCleanerService
     @ObservedObject private var loc = LocalizationManager.shared
     @State private var selectedCategory: CleanerCategory = .systemJunk
@@ -21,12 +21,13 @@ struct SmartCleanerView: View {
     @State private var deleteResult: (success: Int, failed: Int, size: Int64)?
     @State private var showResult = false
     @State private var showCleaningFinished = false
+    @State private var showRunningAppsSafetyAlert = false
     
     // 管理员权限重试
     @State private var failedFiles: [CleanerFileItem] = []
     @State private var showRetryWithAdmin = false
     
-    // View State
+    // Detail Sheet State
     @State private var showDetailSheet = false
     @State private var initialDetailCategory: CleanerCategory? = nil
     
@@ -35,9 +36,10 @@ struct SmartCleanerView: View {
         if service.isScanning {
             return .scanning
         } else if service.isCleaning {
+            // cleaningPage UI is simpler, we can reuse simplified scanning layout or keeping it
             return .cleaning
         } else if showRetryWithAdmin {
-            return .cleaning // 弹窗时保持清理页面
+            return .cleaning 
         } else if showCleaningFinished {
             return .finished
         } else if hasScanResults {
@@ -53,36 +55,56 @@ struct SmartCleanerView: View {
                !service.similarPhotoGroups.isEmpty ||
                !service.largeFiles.isEmpty ||
                !service.userCacheFiles.isEmpty ||
-               !service.systemCacheFiles.isEmpty
+               !service.systemCacheFiles.isEmpty ||
+               !service.virusThreats.isEmpty ||
+               service.hasAppUpdates ||
+               !service.startupItems.isEmpty ||
+               !service.performanceApps.isEmpty
     }
 
     // 计算扫描到的总大小
-    // 注意：只计算顶级类别，避免重复计算
-    // systemJunk 已经包含了 systemCache, oldUpdates, userCache, languageFiles, systemLogs, userLogs, brokenLoginItems
     private var totalScannedSize: Int64 {
-        // 只计算顶级类别，不包括 systemJunk 的子类别
         let topLevelCategories: [CleanerCategory] = [
-            .systemJunk, .duplicates, .similarPhotos, .largeFiles
+            .systemJunk, .duplicates, .similarPhotos, .largeFiles, .virus
         ]
         return topLevelCategories.reduce(0) { $0 + service.sizeFor(category: $1) }
     }
     
     var body: some View {
         ZStack {
-            switch scanState {
-            case .initial:
-                initialPage
-            case .scanning:
-                scanningPage
-            case .completed:
-                resultsPage
-            case .cleaning:
-                cleaningPage
-            case .finished:
-                cleaningFinishedPage
+            // 背景 - 匹配设计图的紫靛色渐变
+            BackgroundStyles.smartClean
+                .ignoresSafeArea()
+            
+            // Main Content
+            VStack {
+                 // Header
+                 headerView
+                 
+                 // Dynamic Content
+                 switch scanState {
+                 case .initial:
+                     initialPage
+                 case .scanning:
+                     scanningPage
+                 case .completed:
+                     resultsPage
+                 case .cleaning:
+                     cleaningPage
+                 case .finished:
+                     cleaningFinishedPage
+                 }
+            }
+            .padding(.bottom, 100) // Increase padding to avoid button overlap
+
+            // Floating Main Action Button
+            VStack {
+                Spacer()
+                mainActionButton
+                    .padding(.bottom, 30) // Raise button to be fully visible
             }
         }
-        // 使用 sheet 弹窗显示详情
+        // Sheet for details
         .sheet(isPresented: $showDetailSheet) {
             AllCategoriesDetailSheet(
                 service: service,
@@ -91,407 +113,287 @@ struct SmartCleanerView: View {
                 initialCategory: initialDetailCategory
             )
         }
+        // Alerts & Confirmations ... (Keeping existing logic)
         .confirmationDialog(
             loc.currentLanguage == .chinese ? "确认删除" : "Confirm Delete",
             isPresented: $showDeleteConfirmation
         ) {
             Button(loc.currentLanguage == .chinese ? "开始清理" : "Start Cleaning", role: .destructive) {
                 Task {
-                    // Start cleaning
                     let result = await service.cleanAll()
                     deleteResult = (result.success, result.failed, result.size)
                     failedFiles = result.failedFiles
-                    
                     if result.failed > 0 && !failedFiles.isEmpty {
-                        // 有失败的文件，询问是否使用管理员权限
                         showRetryWithAdmin = true
                     } else {
-                        // 清理完成，显示最终结果页
                         showCleaningFinished = true
                     }
                 }
             }
             Button(loc.L("cancel"), role: .cancel) {}
         } message: {
-            Text(loc.currentLanguage == .chinese ?
-                 "将清理所有选中的垃圾文件，释放空间。" :
-                 "Clean all selected files to free up space.")
+            Text(loc.currentLanguage == .chinese ? "将清理所有选中的垃圾文件，释放空间。" : "Clean all selected files to free up space.")
         }
-        // 询问是否使用管理员权限重试
         .alert(loc.currentLanguage == .chinese ? "部分文件需要管理员权限" : "Some Files Require Admin Privileges", isPresented: $showRetryWithAdmin) {
-            Button(loc.currentLanguage == .chinese ? "使用管理员权限删除" : "Delete with Admin", role: .destructive) {
-                Task {
-                    let adminResult = await service.cleanWithPrivileges(files: failedFiles)
-                    // 合并结果
-                    if let currentResult = deleteResult {
-                        deleteResult = (
-                            currentResult.success + adminResult.success,
-                            adminResult.failed,  // 更新失败数
-                            currentResult.size + adminResult.size
-                        )
-                    }
-                    failedFiles = []
-                    
-                    // 管理员清理也完成后，显示最终结果页
-                    showCleaningFinished = true
-                }
-            }
-            Button(loc.L("cancel"), role: .cancel) {
-                // 用户取消管理员权限，也显示最终结果
-                showCleaningFinished = true
-            }
+             Button(loc.currentLanguage == .chinese ? "使用管理员权限删除" : "Delete with Admin", role: .destructive) {
+                 Task {
+                     let adminResult = await service.cleanWithPrivileges(files: failedFiles)
+                     if let currentResult = deleteResult {
+                         deleteResult = (
+                             currentResult.success + adminResult.success,
+                             adminResult.failed,
+                             currentResult.size + adminResult.size
+                         )
+                     }
+                     failedFiles = []
+                     showCleaningFinished = true
+                 }
+             }
+             Button(loc.L("cancel"), role: .cancel) { showCleaningFinished = true }
         } message: {
-            let totalFailedSize = failedFiles.reduce(0) { $0 + $1.size }
+
             Text(loc.currentLanguage == .chinese ?
-                 "有 \(failedFiles.count) 个文件（共 \(ByteCountFormatter.string(fromByteCount: totalFailedSize, countStyle: .file))）因权限不足无法删除。\n\n是否使用管理员权限强制删除？系统将提示您输入密码。" :
-                 "\(failedFiles.count) files (\(ByteCountFormatter.string(fromByteCount: totalFailedSize, countStyle: .file))) could not be deleted due to permissions.\n\nWould you like to delete them with admin privileges? You will be prompted for your password.")
+                 "有 \(failedFiles.count) 个文件因权限不足无法删除。" :
+                 "\(failedFiles.count) files could not be deleted due to permissions.")
         }
-        // 清理完成结果
-        .alert(loc.currentLanguage == .chinese ? "清理完成" : "Cleanup Complete", isPresented: $showResult) {
-            Button(loc.L("confirm"), role: .cancel) {}
+        .alert(loc.currentLanguage == .chinese ? "重要提示：正在运行的应用" : "Important: Running Applications", isPresented: $showRunningAppsSafetyAlert) {
+            Button(loc.currentLanguage == .chinese ? "确认并继续" : "Confirm and Continue", role: .destructive) {
+                showDeleteConfirmation = true
+            }
+            Button(loc.L("cancel"), role: .cancel) {}
         } message: {
-            if let result = deleteResult {
-                if result.failed > 0 {
-                    Text(loc.currentLanguage == .chinese ?
-                         "成功删除 \(result.success) 个文件，释放 \(ByteCountFormatter.string(fromByteCount: result.size, countStyle: .file))\n\n⚠️ \(result.failed) 个文件仍无法删除。" :
-                         "Deleted \(result.success) files, freed \(ByteCountFormatter.string(fromByteCount: result.size, countStyle: .file))\n\n⚠️ \(result.failed) files could not be deleted.")
-                } else {
-                    Text(loc.currentLanguage == .chinese ?
-                         "成功删除 \(result.success) 个文件，释放 \(ByteCountFormatter.string(fromByteCount: result.size, countStyle: .file))" :
-                         "Deleted \(result.success) files, freed \(ByteCountFormatter.string(fromByteCount: result.size, countStyle: .file))")
-                }
-            }
+            Text(loc.currentLanguage == .chinese ?
+                 "检测到您已勾选正在运行的应用。关闭它们可能会导致未保存的数据丢失。确认要继续吗？" :
+                 "Running applications are selected to be closed. This may cause loss of unsaved data. Do you want to continue?")
         }
     }
     
-    // MARK: - 初始页面
-    private var initialPage: some View {
-        VStack(spacing: 0) {
-            Spacer()
-            
-            // 图标
-            ZStack {
-                Circle()
-                    .fill(LinearGradient(colors: [Color.cyan.opacity(0.3), Color.blue.opacity(0.3)], startPoint: .topLeading, endPoint: .bottomTrailing))
-                    .frame(width: 180, height: 180)
-                
-                Image(systemName: "desktopcomputer")
-                    .font(.system(size: 80))
-                    .foregroundColor(.cyan)
-            }
-            .padding(.bottom, 40)
-            
-            // 欢迎文字
-            Text(loc.currentLanguage == .chinese ? "欢迎使用 Mac优化大师" : "Welcome to MacOptimizer")
-                .font(.system(size: 28, weight: .semibold))
-                .foregroundColor(.white)
-                .padding(.bottom, 12)
-            
-            Text(loc.currentLanguage == .chinese ? "开始全面、仔细扫描您的 Mac。" : "Start a comprehensive scan of your Mac.")
-                .font(.body)
-                .foregroundColor(.secondaryText)
-                .padding(.bottom, 60)
-            
-            Spacer()
-            
-            // 扫描按钮
-            CircularActionButton(
-                title: loc.currentLanguage == .chinese ? "扫描" : "Scan",
-                gradient: CircularActionButton.blueGradient,
-                action: {
-                    Task {
-                        await service.scanAll()
-                    }
-                }
-            )
-            .padding(.bottom, 60)
-        }
-    }
-    
-    // MARK: - 扫描中页面
-    private var scanningPage: some View {
-        VStack(spacing: 0) {
-            // 标题栏
-            HStack {
-                Text(loc.currentLanguage == .chinese ? "智能扫描" : "Smart Scan")
-                    .font(.title2)
-                    .foregroundColor(.white)
-            }
-            .padding(.top, 20)
-            
-            Spacer()
-            
-            // 进度标题
-            Text(loc.currentLanguage == .chinese ? "正在扫描..." : "Scanning...")
-                .font(.system(size: 24, weight: .semibold))
-                .foregroundColor(.white)
-                .padding(.bottom, 40)
-            
-            // 真实扫描任务列表（多语言文件扫描已禁用）
-            VStack(alignment: .leading, spacing: 20) {
-                // 定义显示顺序（已移除多语言文件）
-                let categories: [CleanerCategory] = [.systemJunk, .duplicates, .similarPhotos, .largeFiles]
-                
-                ForEach(categories, id: \.self) { category in
-                    CleaningTaskRow(
-                        icon: category.icon,
-                        color: category.color,
-                        title: loc.currentLanguage == .chinese ? category.rawValue : category.englishName,
-                        status: getScanningStatus(for: category),
-                        fileSize: ByteCountFormatter.string(fromByteCount: service.sizeFor(category: category), countStyle: .file)
-                    )
-                }
-            }
-            .frame(maxWidth: 400)
-            
-            Spacer()
-            
-            // 停止按钮
-            HStack(spacing: 20) {
-                CircularActionButton(
-                    title: loc.currentLanguage == .chinese ? "停止" : "Stop",
-                    gradient: CircularActionButton.stopGradient,
-                    progress: service.scanProgress,
-                    showProgress: true,
-                    scanSize: ByteCountFormatter.string(fromByteCount: totalScannedSize, countStyle: .file),
-                    action: {
-                        service.stopScanning()
-                    }
-                )
-            }
-            .padding(.bottom, 40)
-            
-            // 当前扫描路径
-            Text(service.currentScanPath)
-                .font(.caption)
-                .foregroundColor(.secondaryText.opacity(0.6))
-                .lineLimit(1)
-                .truncationMode(.middle)
-                .padding(.horizontal, 40)
-                .padding(.bottom, 20)
-        }
-    }
-    
-    // MARK: - 扫描结果页面
-    private var resultsPage: some View {
-        VStack(spacing: 0) {
-            // ... (保持不变)
-            // 标题栏
-            HStack {
-                Button(action: {
-                    Task {
-                        service.resetAll()
-                    }
-                }) {
-                    HStack(spacing: 4) {
-                        Image(systemName: "chevron.left")
-                        Text(loc.currentLanguage == .chinese ? "重新开始" : "Start Over")
-                    }
-                    .foregroundColor(.secondaryText)
-                }
-                .buttonStyle(.plain)
-                
-                Spacer()
-                
-                Text(loc.currentLanguage == .chinese ? "智能扫描" : "Smart Scan")
-                    .font(.title2)
-                    .foregroundColor(.white)
-                
-                Spacer()
-                
-                // 重新扫描按钮
-                Button(action: {
-                    Task {
-                        service.resetAll()
-                        await service.scanAll()
-                    }
-                }) {
+    // MARK: - Header
+    private var headerView: some View {
+        HStack {
+            if scanState == .completed || scanState == .finished {
+                Button(action: { Task { service.resetAll() } }) {
                     HStack(spacing: 6) {
-                        Image(systemName: "arrow.clockwise")
-                        Text(loc.currentLanguage == .chinese ? "重新扫描" : "Rescan")
+                        Image(systemName: "arrow.counterclockwise")
+                        Text(loc.currentLanguage == .chinese ? "重新开始" : "Start Over")
                     }
                     .font(.system(size: 14, weight: .medium))
                     .foregroundColor(.white.opacity(0.8))
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 6)
-                    .background(Color.white.opacity(0.1))
-                    .cornerRadius(8)
                 }
                 .buttonStyle(.plain)
+            }
+            
+            Spacer()
+            
+            // Center Title
+             Text(loc.currentLanguage == .chinese ? "智能扫描" : "Smart Scan")
+                .font(.system(size: 14, weight: .regular))
+                .foregroundColor(.white.opacity(0.6))
+            
+            Spacer()
+            
+            
+            // Right Action -  removed helper/rescan button
+            // Placeholder to balance layout
+            Text("           ").opacity(0)
+        }
+        .padding(.horizontal, 24)
+        .padding(.top, 16)
+        .padding(.bottom, 10)
+    }
+    
+    // MARK: - Initial Page (Ready State)
+    private var initialPage: some View {
+        VStack {
+            Spacer()
+            
+            // 核心图标区域 - 匹配设计图
+            ZStack {
+                // 底部紫色光晕
+                Circle()
+                    .fill(Color(red: 0.6, green: 0.3, blue: 0.9).opacity(0.2))
+                    .frame(width: 450, height: 450)
+                    .blur(radius: 60)
+                
+                // 显示器主图标
+                ZStack {
+                    // 主体
+                    Image(systemName: "desktopcomputer")
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .frame(width: 260, height: 260)
+                        .foregroundStyle(
+                            LinearGradient(
+                                colors: [
+                                    Color(red: 1.0, green: 0.6, blue: 0.8), // 粉色顶部
+                                    Color(red: 0.9, green: 0.4, blue: 0.7)  // 深粉色
+                                ],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            )
+                        )
+                        .shadow(color: Color.pink.opacity(0.3), radius: 30, x: 0, y: 10)
+                    
+                    // 扫过光效 (Wipe/Scan animation effect)
+                    GeometryReader { geo in
+                        Rectangle()
+                            .fill(
+                                LinearGradient(
+                                    stops: [
+                                        .init(color: .clear, location: 0),
+                                        .init(color: .white.opacity(0.4), location: 0.5),
+                                        .init(color: .clear, location: 1)
+                                    ],
+                                    startPoint: .top,
+                                    endPoint: .bottom
+                                )
+                            )
+                            .frame(width: 300, height: 20)
+                            .rotationEffect(.degrees(-25))
+                            .offset(y: -50)
+                            .modifier(WipingAnimation())
+                    }
+                    .frame(width: 260, height: 260)
+                    .clipShape(RoundedRectangle(cornerRadius: 20))
+                }
+            }
+            .padding(.bottom, 60)
+            
+            VStack(spacing: 12) {
+                Text(loc.currentLanguage == .chinese ? "欢迎使用 Mac优化大师" : "Welcome to MacOptimizer")
+                    .font(.system(size: 40, weight: .regular))
+                    .foregroundColor(.white)
+                
+                Text(loc.currentLanguage == .chinese ? "开始全面、仔细扫描您的 Mac。" : "Start a comprehensive and thorough scan of your Mac.")
+                    .font(.system(size: 16))
+                    .foregroundColor(.white.opacity(0.6))
+            }
+            .padding(.bottom, 100)
+            
+            Spacer()
+        }
+    }
+
+    // MARK: - Scanning Page (Block Grid Layout)
+    private var scanningPage: some View {
+        VStack(spacing: 0) {
+            // Grid of scan blocks - 8 categories (4x2)
+            VStack(spacing: 16) {
+                // Row 1
+                let row1: [CleanerCategory] = [.systemJunk, .duplicates, .similarPhotos, .largeFiles]
+                HStack(spacing: 16) {
+                    ForEach(row1, id: \.self) { cat in
+                        createScanBlock(for: cat)
+                    }
+                }
+                
+                // Row 2
+                let row2: [CleanerCategory] = [.virus, .startupItems, .performanceApps, .appUpdates]
+                HStack(spacing: 16) {
+                    ForEach(row2, id: \.self) { cat in
+                        createScanBlock(for: cat)
+                    }
+                }
             }
             .padding(.horizontal, 24)
             .padding(.top, 20)
             
             Spacer()
-            
-            // 结果标题
-            Text(loc.currentLanguage == .chinese ? "好了，我发现的内容都在这里。" : "Done! Here's what I found.")
-                .font(.system(size: 24, weight: .semibold))
-                .foregroundColor(.white)
-                .padding(.bottom, 8)
-            
-            Text(loc.currentLanguage == .chinese ? "保持您的 Mac 干净、安全、性能优化的所有任务正在等候，立即运行！" : "All tasks to keep your Mac clean, safe, and optimized are ready!")
-                .font(.body)
-                .foregroundColor(.secondaryText)
-                .multilineTextAlignment(.center)
-                .padding(.horizontal, 60)
-                .padding(.bottom, 40)
-            
-            // 结果概览 - 只显示清理卡片
-            HStack(spacing: 40) {
-                // 清理
-                ResultCategoryCard(
-                    icon: "internaldrive.fill",
-                    iconColor: .blue,
-                    title: loc.currentLanguage == .chinese ? "清理" : "Cleanup",
-                    subtitle: loc.currentLanguage == .chinese ? "移除不需要的垃圾" : "Remove junk",
-                    value: ByteCountFormatter.string(fromByteCount: service.systemJunkTotalSize + service.totalCleanableSize, countStyle: .file),
-                    hasDetails: true,
-                    onDetailTap: {
-                        initialDetailCategory = nil
-                        showDetailSheet = true
-                    }
-                )
-            }
-            .padding(.horizontal, 40)
-            
-            Spacer()
-            
-            // 运行按钮
-            CircularActionButton(
-                title: loc.currentLanguage == .chinese ? "清理" : "Cleanup",
-                gradient: CircularActionButton.greenGradient,
-                action: {
-                    showDeleteConfirmation = true
-                }
-            )
-            .padding(.bottom, 60)
         }
     }
     
-    // MARK: - 清理中页面
+    // MARK: - Scanning State Helpers
+    
+    // Get list of already scanned categories based on scan order
+    // Order: systemJunk -> duplicates -> similarPhotos -> localizations -> largeFiles -> virus -> appUpdates -> startupItems -> performanceApps
+    private var scanOrder: [CleanerCategory] {
+        [.systemJunk, .duplicates, .similarPhotos, .localizations, .largeFiles, .virus, .appUpdates, .startupItems, .performanceApps]
+    }
+    
+    private func hasPassed(category: CleanerCategory) -> Bool {
+        guard let currentIndex = scanOrder.firstIndex(of: service.currentCategory),
+              let targetIndex = scanOrder.firstIndex(of: category) else {
+            return false
+        }
+        return currentIndex > targetIndex
+    }
+    
+    // Cleaning category (systemJunk)
+    private var isCleaningCategoryActive: Bool {
+        service.currentCategory == .systemJunk && service.isScanning
+    }
+    private var cleaningCompleted: Bool {
+        hasPassed(category: .systemJunk) || (!service.isScanning && service.systemJunkTotalSize > 0)
+    }
+    private var cleaningResultText: String {
+        ByteCountFormatter.string(fromByteCount: service.systemJunkTotalSize, countStyle: .file) + " " + (loc.currentLanguage == .chinese ? "的垃圾" : "Junk")
+    }
+    
+    // Protection category (virus)
+    private var isProtectionCategoryActive: Bool {
+        service.currentCategory == .virus && service.isScanning
+    }
+    private var protectionCompleted: Bool {
+        hasPassed(category: .virus) || (!service.isScanning && !isProtectionCategoryActive)
+    }
+    private var protectionResultText: String {
+        service.virusThreats.isEmpty ? (loc.currentLanguage == .chinese ? "无潜在威胁" : "No Threats") : "\(service.virusThreats.count) " + (loc.currentLanguage == .chinese ? "个威胁" : "Threats")
+    }
+    
+    // Performance category (startupItems, performanceApps)
+    private var isPerformanceCategoryActive: Bool {
+        [.startupItems, .performanceApps].contains(service.currentCategory) && service.isScanning
+    }
+    private var performanceCompleted: Bool {
+        hasPassed(category: .performanceApps) || (!service.isScanning && !isPerformanceCategoryActive)
+    }
+    private var performanceResultText: String {
+        let count = service.startupItems.count + service.performanceApps.count
+        return "\(count) " + (loc.currentLanguage == .chinese ? "个项目" : "Items")
+    }
+    
+    // Applications category (appUpdates)
+    private var isApplicationsCategoryActive: Bool {
+        service.currentCategory == .appUpdates && service.isScanning
+    }
+    private var applicationsCompleted: Bool {
+        hasPassed(category: .appUpdates) || (!service.isScanning && !isApplicationsCategoryActive)
+    }
+    private var applicationsResultText: String {
+        service.hasAppUpdates ? (loc.currentLanguage == .chinese ? "有更新可用" : "Updates Available") : (loc.currentLanguage == .chinese ? "无重要更新" : "No Updates")
+    }
+    
+    // Clutter category (duplicates, similarPhotos, largeFiles)
+    private var isClutterCategoryActive: Bool {
+        [.duplicates, .similarPhotos, .largeFiles].contains(service.currentCategory) && service.isScanning
+    }
+    private var clutterCompleted: Bool {
+        hasPassed(category: .largeFiles) || (!service.isScanning && !isClutterCategoryActive)
+    }
+    private var clutterResultText: String {
+        let size = service.sizeFor(category: .duplicates) + service.sizeFor(category: .similarPhotos) + service.sizeFor(category: .largeFiles)
+        return size > 0 ? ByteCountFormatter.string(fromByteCount: size, countStyle: .file) : (loc.currentLanguage == .chinese ? "无杂乱文件" : "No Clutter")
+    }
+
+    // MARK: - Cleaning Page (Block Grid Layout)
     private var cleaningPage: some View {
         VStack(spacing: 0) {
-            // 标题栏
-            HStack {
-                Text(loc.currentLanguage == .chinese ? "智能扫描" : "Smart Scan")
-                    .font(.title2)
-                    .foregroundColor(.white)
-                
-                Spacer()
-                
-                // 助手按钮 (占位)
-                HStack(spacing: 4) {
-                    Circle().fill(Color.gray).frame(width: 6, height: 6)
-                    Text(loc.currentLanguage == .chinese ? "助手" : "Assistant")
-                }
-                .font(.caption)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 4)
-                .background(Color.white.opacity(0.1))
-                .cornerRadius(12)
-                .foregroundColor(.white.opacity(0.8))
-            }
-            .padding(.horizontal, 24)
-            .padding(.top, 20)
-            
-            Spacer()
-            
-            // 状态标题
-            Text(loc.currentLanguage == .chinese ? "正在清理系统..." : "Cleaning System...")
-                .font(.system(size: 24, weight: .semibold))
-                .foregroundColor(.white)
-                .padding(.bottom, 40)
-            
-            // 真实清理任务列表 (只显示有需要清理的项)
-            VStack(alignment: .leading, spacing: 20) {
-                // 计算需要清理的类别列表
-                let categoriesToClean: [CleanerCategory] = {
-                    let all: [CleanerCategory] = [.systemJunk, .duplicates, .similarPhotos, .largeFiles]
-                    return all.filter { service.sizeFor(category: $0) > 0 }
-                }()
-                
-                if categoriesToClean.isEmpty {
-                    // 如果都为空但还在清理中，显示“准备中...”
-                    Text("Preparing...")
-                        .foregroundColor(.secondaryText)
-                } else {
-                    ForEach(categoriesToClean, id: \.self) { category in
-                        CleaningTaskRow(
-                            icon: category.icon,
-                            color: category.color,
-                            title: loc.currentLanguage == .chinese ? category.rawValue : category.englishName,
-                            status: getCleaningStatus(for: category),
-                            fileSize: ByteCountFormatter.string(fromByteCount: service.sizeFor(category: category), countStyle: .file)
-                        )
+            // Grid of cleaning blocks - 8 categories
+            VStack(spacing: 16) {
+                // Row 1
+                let row1: [CleanerCategory] = [.systemJunk, .duplicates, .similarPhotos, .largeFiles]
+                HStack(spacing: 16) {
+                    ForEach(row1, id: \.self) { cat in
+                        createCleaningBlock(for: cat)
                     }
                 }
-            }
-            .frame(maxWidth: 400)
-            
-            Spacer()
-            
-            // 停止按钮 (禁用或占位)
-            ZStack {
-                Circle()
-                    .stroke(Color.white.opacity(0.2), lineWidth: 4)
-                    .frame(width: 80, height: 80)
                 
-                if service.isCleaning {
-                    Circle()
-                        .trim(from: 0, to: 0.3)
-                        .stroke(Color.green, style: StrokeStyle(lineWidth: 4, lineCap: .round))
-                        .frame(width: 80, height: 80)
-                        .rotationEffect(.degrees(Double(Date().timeIntervalSince1970 * 360).remainder(dividingBy: 360))) // 简单动画需要state驱动，这里简化
-                        .rotationEffect(.degrees(-90))
-                }
-                
-                Button(action: {}) {
-                    Text(loc.currentLanguage == .chinese ? "清理中" : "Cleaning")
-                        .font(.caption)
-                        .foregroundColor(.white)
-                        .frame(width: 60, height: 60)
-                        .background(Color.white.opacity(0.1))
-                        .clipShape(Circle())
-                }
-                .buttonStyle(.plain)
-                .disabled(true)
-            }
-            .padding(.bottom, 40)
-        }
-    }
-    
-    // MARK: - 清理完成页面
-    private var cleaningFinishedPage: some View {
-        VStack(spacing: 0) {
-            // 顶部导航
-            HStack {
-                Button(action: {
-                    // 返回初始状态
-                    Task {
-                        service.resetAll()
-                        showCleaningFinished = false
+                // Row 2
+                let row2: [CleanerCategory] = [.virus, .startupItems, .performanceApps, .appUpdates]
+                HStack(spacing: 16) {
+                    ForEach(row2, id: \.self) { cat in
+                        createCleaningBlock(for: cat)
                     }
-                }) {
-                    HStack(spacing: 4) {
-                        Image(systemName: "chevron.left")
-                        Text(loc.currentLanguage == .chinese ? "重新开始" : "Start Over")
-                    }
-                    .foregroundColor(.secondaryText)
-                }
-                .buttonStyle(.plain)
-                
-                Spacer()
-                
-                Text(loc.currentLanguage == .chinese ? "智能扫描" : "Smart Scan")
-                    .font(.title2)
-                    .foregroundColor(.white)
-                
-                Spacer()
-                
-                // 占位，保持平衡
-                HStack(spacing: 4) {
-                    Text("     ")
                 }
             }
             .padding(.horizontal, 24)
@@ -499,756 +401,1002 @@ struct SmartCleanerView: View {
             
             Spacer()
             
-            // 电脑图标 (粉色风格，匹配截图)
-            ZStack {
-                RoundedRectangle(cornerRadius: 20)
-                    .fill(Color.pink.opacity(0.8))
-                    .frame(width: 240, height: 160)
-                    .shadow(color: .pink.opacity(0.3), radius: 20, x: 0, y: 10)
+            // Progress indicator
+            VStack(spacing: 12) {
+                ProgressView()
+                    .scaleEffect(1.2)
+                    .progressViewStyle(CircularProgressViewStyle(tint: .white))
                 
-                Image(systemName: "desktopcomputer")
-                    .font(.system(size: 80))
-                    .foregroundColor(.white.opacity(0.9))
-            }
-            .padding(.bottom, 40)
-            
-            // 结果标题
-            HStack(alignment: .top, spacing: 40) {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text(loc.currentLanguage == .chinese ? "做得不错！" : "Well Done!")
-                        .font(.title)
-                        .bold()
-                        .foregroundColor(.white)
-                    
-                    Text(loc.currentLanguage == .chinese ? "您的 Mac 状态很好。" : "Your Mac is in good shape.")
-                        .font(.body)
-                        .foregroundColor(.secondaryText)
-                }
-                
-                // 结果统计栏
-                VStack(alignment: .leading, spacing: 20) {
-                    // 已清理大小
-                    HStack(spacing: 12) {
-                        Image(systemName: "externaldrive.fill") // 硬盘图标
-                            .foregroundColor(.white)
-                            .frame(width: 32, height: 32)
-                            .background(Color.blue)
-                            .cornerRadius(8)
-                        
-                        VStack(alignment: .leading, spacing: 2) {
-                            HStack {
-                                Image(systemName: "checkmark.circle.fill")
-                                    .foregroundColor(.green)
-                                    .font(.caption)
-                                Text(ByteCountFormatter.string(fromByteCount: (deleteResult?.size ?? 0), countStyle: .file))
-                                    .font(.headline)
-                                    .foregroundColor(.white)
-                            }
-                            Text(loc.currentLanguage == .chinese ? "不需要的垃圾已移除" : "Junk removed")
-                                .font(.caption)
-                                .foregroundColor(.secondaryText)
-                        }
-                    }
-                    
-                    // 深度扫描建议 - 可点击跳转
-                    HStack(spacing: 12) {
-                        Image(systemName: "hand.raised.fill") // 盾牌图标
-                            .foregroundColor(.white)
-                            .frame(width: 32, height: 32)
-                            .background(Color.green)
-                            .cornerRadius(8)
-                        
-                        VStack(alignment: .leading, spacing: 2) {
-                            HStack {
-                                Image(systemName: "checkmark.circle.fill")
-                                    .foregroundColor(.green)
-                                    .font(.caption)
-                                Text(loc.currentLanguage == .chinese ? "建议执行深度扫描" : "Deep Scan Recommended")
-                                    .font(.headline)
-                                    .foregroundColor(.white)
-                            }
-                            Text(loc.currentLanguage == .chinese ? "未发现恶意威胁，但是强烈建议执行深度扫描。" : "No threats found, but deep scan recommended.")
-                                .font(.caption2)
-                                .foregroundColor(.secondaryText)
-                                .lineLimit(2)
-                            
-                            Button(action: {
-                                // 跳转到深度清理页面
-                                selectedModule = .deepClean
-                            }) {
-                                Text(loc.currentLanguage == .chinese ? "运行深度扫描" : "Run Deep Scan")
-                                    .font(.caption)
-                                    .bold()
-                                    .foregroundColor(.white)
-                                    .padding(.horizontal, 8)
-                                    .padding(.vertical, 4)
-                                    .background(Color.green.opacity(0.6))
-                                    .cornerRadius(4)
-                            }
-                            .buttonStyle(.plain)
-                            .padding(.top, 4)
-                        }
-                    }
-                }
-            }
-            .padding(.horizontal, 40)
-            
-            Spacer()
-        }
-    }
-
-    
-    // MARK: - Helper Functions
-    private func getCleaningStatus(for category: CleanerCategory) -> CleaningTaskRow.Status {
-        if service.cleanedCategories.contains(category) {
-            return .completed
-        } else if service.cleaningCurrentCategory == category {
-            return .processing
-        } else {
-            return .waiting
-        }
-    }
-    
-    private func getScanningStatus(for category: CleanerCategory) -> CleaningTaskRow.Status {
-        let isCurrent = service.currentCategory == category
-        // 简单判断完成状态：如果当前正在扫描的类别在列表中位于此类别之后，则认为此类别已完成
-        // 注意：这依赖于 scanAll 的执行顺序：SystemJunk -> Duplicates -> Similar -> Localizations -> Large
-        let isCompleted = !isCurrent && (
-            (category == .systemJunk && [.duplicates, .similarPhotos, .largeFiles].contains(service.currentCategory)) ||
-            (category == .duplicates && [.similarPhotos, .largeFiles].contains(service.currentCategory)) ||
-            (category == .similarPhotos && [.largeFiles].contains(service.currentCategory))
-        )
-        
-        if isCurrent { return .processing }
-        if isCompleted { return .completed }
-        return .waiting
-    }
-}
-
-// MARK: - 清理任务行组件
-struct CleaningTaskRow: View {
-    let icon: String
-    let color: Color
-    let title: String
-    enum Status { case waiting, processing, completed }
-    let status: Status
-    let fileSize: String?
-    
-    var body: some View {
-        HStack(spacing: 16) {
-            ZStack {
-                Circle().fill(color).frame(width: 32, height: 32)
-                Image(systemName: icon)
-                    .foregroundColor(.white)
-                    .font(.system(size: 16))
-            }
-            
-            Text(title)
-                .font(.body)
-                .foregroundColor(.white)
-            
-            Spacer()
-            
-            if let size = fileSize {
-                Text(size)
-                    .foregroundColor(.secondaryText)
-                    .font(.body)
-                    .frame(width: 90, alignment: .trailing)
-            }
-            
-            ZStack {
-                switch status {
-                case .waiting:
-                    Image(systemName: "ellipsis")
-                        .foregroundColor(.secondaryText)
-                case .processing:
-                    ProgressView()
-                        .scaleEffect(0.8)
-                        .frame(width: 16, height: 16)
-                case .completed:
-                    Image(systemName: "checkmark")
-                        .foregroundColor(.white)
-                        .font(.system(size: 14, weight: .bold))
-                }
-            }
-            .frame(width: 24, height: 24)
-        }
-        .padding(.horizontal, 16)
-        .frame(height: 56) // Fixed height to prevent jitter
-    }
-}
-
-// MARK: - 扫描中卡片组件
-struct ScanCategoryCard: View {
-    let icon: String
-    let iconColor: Color
-    let title: String
-    let subtitle: String
-    let value: String
-    let isScanning: Bool
-    
-    var body: some View {
-        VStack(spacing: 16) {
-            ZStack {
-                Circle()
-                    .fill(iconColor.opacity(0.2))
-                    .frame(width: 80, height: 80)
-                
-                Image(systemName: icon)
-                    .font(.system(size: 32))
-                    .foregroundColor(iconColor)
-            }
-            
-            Text(title)
-                .font(.headline)
-                .foregroundColor(.white)
-            
-            Text(subtitle)
-                .font(.caption)
-                .foregroundColor(.secondaryText)
-                .multilineTextAlignment(.center)
-            
-            Text(value)
-                .font(.title3)
-                .foregroundColor(.secondaryText)
-        }
-        .frame(width: 180)
-    }
-}
-
-// MARK: - 结果卡片组件
-struct ResultCategoryCard: View {
-    let icon: String
-    let iconColor: Color
-    let title: String
-    let subtitle: String
-    let value: String
-    var valueSecondary: String? = nil
-    let hasDetails: Bool
-    let onDetailTap: () -> Void
-    
-    var body: some View {
-        VStack(spacing: 16) {
-            ZStack {
-                Circle()
-                    .fill(iconColor.opacity(0.2))
-                    .frame(width: 80, height: 80)
-                
-                Image(systemName: icon)
-                    .font(.system(size: 32))
-                    .foregroundColor(iconColor)
-            }
-            
-            HStack(spacing: 4) {
-                Image(systemName: "checkmark.circle.fill")
-                    .foregroundColor(.green)
-                    .font(.system(size: 14))
-                Text(title)
-                    .font(.headline)
-                    .foregroundColor(.white)
-            }
-            
-            Text(subtitle)
-                .font(.caption)
-                .foregroundColor(.secondaryText)
-                .multilineTextAlignment(.center)
-            
-            if let secondary = valueSecondary {
-                VStack(spacing: 4) {
-                    Text(value)
-                        .font(.title)
-                        .foregroundColor(.white)
-                    Text(secondary)
-                        .font(.caption)
-                        .foregroundColor(.secondaryText)
-                }
-            } else {
-                Text(value)
-                    .font(.title)
-                    .foregroundColor(.white)
-            }
-            
-            if hasDetails {
-                Button(action: onDetailTap) {
-                    Text("查看详情...")
-                        .font(.caption)
-                        .foregroundColor(.white)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 6)
-                        .background(Color.white.opacity(0.2))
-                        .cornerRadius(12)
-                }
-                .buttonStyle(.plain)
-            }
-        }
-        .frame(width: 180)
-    }
-}
-
-// MARK: - 系统垃圾详情弹窗 (支持二级钻取)
-struct SystemJunkDetailSheet: View {
-    @ObservedObject var service: SmartCleanerService
-    @ObservedObject var loc: LocalizationManager
-    @Binding var isPresented: Bool
-    
-    @State private var selectedSubcategory: CleanerCategory? = nil
-    
-    var body: some View {
-        VStack(spacing: 0) {
-            // 顶部栏
-            HStack {
-                Button(action: {
-                    if selectedSubcategory != nil {
-                        selectedSubcategory = nil
-                    } else {
-                        isPresented = false
-                    }
-                }) {
-                    HStack(spacing: 4) {
-                        Image(systemName: "chevron.left")
-                        Text(selectedSubcategory != nil ? 
-                             (loc.currentLanguage == .chinese ? "返回分类" : "Back") :
-                             (loc.currentLanguage == .chinese ? "返回摘要" : "Back"))
-                    }
-                    .foregroundColor(.secondaryText)
-                }
-                .buttonStyle(.plain)
-                
-                Spacer()
-                
-                Text(loc.currentLanguage == .chinese ? "清理详情" : "Cleanup Details")
-                    .font(.headline)
-                    .foregroundColor(.white)
-                
-                Spacer()
-                
-                HStack(spacing: 4) { Image(systemName: "chevron.left"); Text("Back") }.opacity(0)
-            }
-            .padding()
-            .background(Color.black.opacity(0.3))
-            
-            if let subcategory = selectedSubcategory {
-                // 显示该分类下的具体文件列表
-                SubcategoryFileListView(
-                    service: service,
-                    loc: loc,
-                    category: subcategory
-                )
-            } else {
-                // 显示分类概览
-                categoryOverviewContent
-            }
-        }
-        .frame(minWidth: 900, minHeight: 650)
-        .background(
-            LinearGradient(
-                colors: [Color(red: 0.12, green: 0.08, blue: 0.22), Color(red: 0.08, green: 0.12, blue: 0.28)],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-        )
-    }
-    
-    private var categoryOverviewContent: some View {
-        HStack(spacing: 0) {
-            // 左侧分类列表
-            VStack(alignment: .leading, spacing: 0) {
-                HStack {
-                    Button(loc.currentLanguage == .chinese ? "取消全选" : "Deselect All") {}
-                    .buttonStyle(.plain)
-                    .foregroundColor(.secondaryText)
+                Text(loc.currentLanguage == .chinese ? "正在清理中..." : "Cleaning in progress...")
                     .font(.caption)
-                    Spacer()
-                    Text(loc.currentLanguage == .chinese ? "排序方式按 大小" : "Sort by Size")
-                        .font(.caption)
-                        .foregroundColor(.secondaryText)
-                }
-                .padding(.horizontal)
-                .padding(.vertical, 12)
-                
-                SystemJunkCategoryRow(icon: "trash.fill", title: loc.currentLanguage == .chinese ? "系统垃圾" : "System Junk", size: service.systemJunkTotalSize, isSelected: true, color: .pink)
-                    .padding(.horizontal)
-                
-                Spacer()
+                    .foregroundColor(.white.opacity(0.7))
             }
-            .frame(width: 260)
-            .background(Color.black.opacity(0.2))
-            
-            // 右侧详情区域
-            VStack(alignment: .leading, spacing: 0) {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text(loc.currentLanguage == .chinese ? "系统垃圾" : "System Junk")
-                        .font(.title)
-                        .bold()
-                        .foregroundColor(.white)
-                    Text(loc.currentLanguage == .chinese ? "清理您的系统来获得最大的性能和释放自由空间。" : "Clean your system for best performance and free space.")
-                        .font(.subheadline)
-                        .foregroundColor(.secondaryText)
-                }
-                .padding()
-                
-                HStack {
-                    Spacer()
-                    Text(loc.currentLanguage == .chinese ? "排序方式按 大小" : "Sort by Size")
-                        .font(.caption)
-                        .foregroundColor(.secondaryText)
-                }
-                .padding(.horizontal)
-                .padding(.bottom, 8)
-                
-                ScrollView {
-                    VStack(spacing: 12) {
-                        // 用户缓存
-                        DrillDownCategoryRow(
-                            icon: "person.crop.circle.fill",
-                            title: loc.currentLanguage == .chinese ? "用户缓存文件" : "User Cache",
-                            size: service.sizeFor(category: .userCache),
-                            count: service.countFor(category: .userCache),
-                            color: .cyan,
-                            onTap: { selectedSubcategory = .userCache }
-                        )
-                        
-                        // 系统缓存
-                        DrillDownCategoryRow(
-                            icon: "internaldrive.fill",
-                            title: loc.currentLanguage == .chinese ? "系统缓存文件" : "System Cache",
-                            size: service.sizeFor(category: .systemCache),
-                            count: service.countFor(category: .systemCache),
-                            color: .blue,
-                            onTap: { selectedSubcategory = .systemCache }
-                        )
-                        
-                        // 旧更新
-                        DrillDownCategoryRow(
-                            icon: "arrow.down.circle.fill",
-                            title: loc.currentLanguage == .chinese ? "旧更新" : "Old Updates",
-                            size: service.sizeFor(category: .oldUpdates),
-                            count: service.countFor(category: .oldUpdates),
-                            color: .orange,
-                            onTap: { selectedSubcategory = .oldUpdates }
-                        )
-                        
-                        // 语言文件
-                        DrillDownCategoryRow(
-                            icon: "textformat.abc",
-                            title: loc.currentLanguage == .chinese ? "语言文件" : "Language Files",
-                            size: service.sizeFor(category: .languageFiles),
-                            count: service.countFor(category: .languageFiles),
-                            color: .purple,
-                            onTap: { selectedSubcategory = .languageFiles }
-                        )
-                        
-                        // 系统日志
-                        DrillDownCategoryRow(
-                            icon: "doc.text.fill",
-                            title: loc.currentLanguage == .chinese ? "系统日志文件" : "System Logs",
-                            size: service.sizeFor(category: .systemLogs),
-                            count: service.countFor(category: .systemLogs),
-                            color: .green,
-                            onTap: { selectedSubcategory = .systemLogs }
-                        )
-                        
-                        // 用户日志
-                        DrillDownCategoryRow(
-                            icon: "person.text.rectangle.fill",
-                            title: loc.currentLanguage == .chinese ? "用户日志文件" : "User Logs",
-                            size: service.sizeFor(category: .userLogs),
-                            count: service.countFor(category: .userLogs),
-                            color: .teal,
-                            onTap: { selectedSubcategory = .userLogs }
-                        )
-                        
-                        // 损坏的登录项
-                        DrillDownCategoryRow(
-                            icon: "exclamationmark.triangle.fill",
-                            title: loc.currentLanguage == .chinese ? "损坏的登录项" : "Broken Login Items",
-                            size: service.sizeFor(category: .brokenLoginItems),
-                            count: service.countFor(category: .brokenLoginItems),
-                            color: .red,
-                            onTap: { selectedSubcategory = .brokenLoginItems }
-                        )
-                    }
-                    .padding()
-                }
-                
-                Spacer()
-            }
-            .frame(maxWidth: .infinity)
-        }
-    }
-}
-
-// MARK: - 子分类文件列表视图
-struct SubcategoryFileListView: View {
-    @ObservedObject var service: SmartCleanerService
-    @ObservedObject var loc: LocalizationManager
-    let category: CleanerCategory
-    
-    var files: [CleanerFileItem] {
-        switch category {
-        case .userCache: return service.userCacheFiles
-        case .systemCache: return service.systemCacheFiles
-        case .oldUpdates: return service.oldUpdateFiles
-        case .languageFiles: return service.languageFiles
-        case .systemLogs: return service.systemLogFiles
-        case .userLogs: return service.userLogFiles
-        case .brokenLoginItems: return service.brokenLoginItems
-        case .duplicates: return service.duplicateGroups.flatMap { $0.files }
-        case .similarPhotos: return service.similarPhotoGroups.flatMap { $0.files }
-        case .largeFiles: return service.largeFiles
-        case .localizations: return service.localizationFiles
-        default: return []
+            .padding(.bottom, 40)
         }
     }
     
-    var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            // 标题
-            VStack(alignment: .leading, spacing: 8) {
-                Text(loc.currentLanguage == .chinese ? category.rawValue : category.englishName)
-                    .font(.title)
-                    .bold()
-                    .foregroundColor(.white)
-                
-                Text("\(files.count) 个项目，共 \(ByteCountFormatter.string(fromByteCount: files.reduce(0) { $0 + $1.size }, countStyle: .file))")
-                    .font(.subheadline)
-                    .foregroundColor(.secondaryText)
-            }
-            .padding()
-            
-            // 文件列表
-            ScrollView {
-                LazyVStack(spacing: 8) {
-                    ForEach(files.sorted { $0.size > $1.size }, id: \.url) { file in
-                        FileItemRow(file: file, showPath: true, onToggle: {
-                            service.toggleFileSelection(file: file, in: category)
-                        })
+    // MARK: - Results Page (Block Grid Layout - Same as Scanning/Cleaning)
+    private var resultsPage: some View {
+        VStack(spacing: 0) {
+            // Grid of result blocks - 8 categories
+            VStack(spacing: 16) {
+                // Row 1
+                let row1: [CleanerCategory] = [.systemJunk, .duplicates, .similarPhotos, .largeFiles]
+                HStack(spacing: 16) {
+                    ForEach(row1, id: \.self) { cat in
+                        createResultBlock(for: cat)
                     }
                 }
-                .padding(.horizontal)
+                
+                // Row 2
+                let row2: [CleanerCategory] = [.virus, .startupItems, .performanceApps, .appUpdates]
+                HStack(spacing: 16) {
+                    ForEach(row2, id: \.self) { cat in
+                        createResultBlock(for: cat)
+                    }
+                }
             }
+            .padding(.horizontal, 24)
+            .padding(.top, 20)
+            
+            Spacer()
         }
     }
-}
-
-// MARK: - 文件项行
-struct FileItemRow: View {
-    let file: CleanerFileItem
-    let showPath: Bool
-    var onToggle: (() -> Void)? = nil
     
-    var body: some View {
-        HStack(spacing: 12) {
-            // 可点击的复选框
+    // MARK: - Main Action Button (Scan Orb)
+    @ViewBuilder
+    private var mainActionButton: some View {
+        switch scanState {
+        case .initial:
+            // Start Orb
             Button(action: {
-                onToggle?()
+                Task { await service.scanAll() }
             }) {
-                Image(systemName: file.isSelected ? "checkmark.circle.fill" : "circle")
-                    .foregroundColor(file.isSelected ? .blue : .gray)
-                    .font(.system(size: 20))
+                ZStack {
+                    // Outer Glow
+                    Circle()
+                        .fill(RadialGradient(
+                            colors: [Color.purple.opacity(0.4), .clear],
+                            center: .center,
+                            startRadius: 40,
+                            endRadius: 90
+                        ))
+                        .frame(width: 160, height: 160)
+                    
+                    // Main Orb
+                    Circle()
+                        .fill(
+                            LinearGradient(
+                                colors: [Color(red: 0.8, green: 0.2, blue: 0.7), Color(red: 0.5, green: 0.1, blue: 0.6)],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                        .frame(width: 100, height: 100)
+                        .shadow(color: .purple.opacity(0.6), radius: 15, x: 0, y: 8)
+                        .overlay(
+                            // Glassy reflection
+                            Circle()
+                                .strokeBorder(
+                                    LinearGradient(
+                                        colors: [.white.opacity(0.7), .white.opacity(0.1)],
+                                        startPoint: .topLeading,
+                                        endPoint: .bottomTrailing
+                                    ),
+                                    lineWidth: 2
+                                )
+                        )
+                    
+                    Text(loc.currentLanguage == .chinese ? "开始" : "Start")
+                        .font(.system(size: 20, weight: .bold, design: .rounded))
+                        .foregroundColor(.white)
+                        .shadow(radius: 2)
+                }
             }
             .buttonStyle(.plain)
             
-            Image(nsImage: file.icon)
-                .resizable()
-                .frame(width: 32, height: 32)
-            
-            VStack(alignment: .leading, spacing: 2) {
-                Text(file.name)
-                    .font(.system(size: 13, weight: .medium))
+        case .scanning:
+            // Stop Orb
+            Button(action: { service.stopScanning() }) {
+                ZStack {
+                    // Outer Glow
+                    Circle()
+                        .fill(RadialGradient(
+                            colors: [Color.pink.opacity(0.4), .clear],
+                            center: .center,
+                            startRadius: 40,
+                            endRadius: 90
+                        ))
+                        .frame(width: 160, height: 160)
+                    
+                    // Main Orb
+                    Circle()
+                        .fill(
+                            LinearGradient(
+                                colors: [Color(red: 0.9, green: 0.3, blue: 0.5), Color(red: 0.7, green: 0.1, blue: 0.3)],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            )
+                        )
+                        .frame(width: 100, height: 100)
+                        .shadow(color: .pink.opacity(0.6), radius: 15, x: 0, y: 8)
+                        .overlay(
+                            Circle()
+                                .strokeBorder(Color.white.opacity(0.3), lineWidth: 2)
+                        )
+                    
+                    VStack(spacing: 4) {
+                        Image(systemName: "stop.fill")
+                            .font(.system(size: 24))
+                        Text(loc.currentLanguage == .chinese ? "停止" : "Stop")
+                            .font(.system(size: 14, weight: .semibold))
+                    }
                     .foregroundColor(.white)
-                    .lineLimit(1)
+                }
+            }
+            .buttonStyle(.plain)
+            
+        case .completed:
+            // Run Orb
+            Button(action: {
+                if service.performanceApps.contains(where: { $0.isSelected }) {
+                    showRunningAppsSafetyAlert = true
+                } else {
+                    showDeleteConfirmation = true
+                }
+            }) {
+                ZStack {
+                    // Outer Glow
+                    Circle()
+                        .fill(RadialGradient(
+                            colors: [Color.blue.opacity(0.4), .clear],
+                            center: .center,
+                            startRadius: 40,
+                            endRadius: 90
+                        ))
+                        .frame(width: 160, height: 160)
+                    
+                    // Main Orb
+                    Circle()
+                        .fill(
+                            LinearGradient(
+                                colors: [Color(red: 0.2, green: 0.5, blue: 0.9), Color(red: 0.1, green: 0.3, blue: 0.7)],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                        .frame(width: 100, height: 100)
+                        .shadow(color: .blue.opacity(0.6), radius: 15, x: 0, y: 8)
+                        .overlay(
+                            Circle()
+                                .strokeBorder(
+                                    LinearGradient(
+                                        colors: [.white.opacity(0.6), .white.opacity(0.1)],
+                                        startPoint: .topLeading,
+                                        endPoint: .bottomTrailing
+                                    ),
+                                    lineWidth: 2
+                                )
+                        )
+                    
+                    VStack(spacing: 2) {
+                        Image(systemName: "rocket.fill")
+                            .font(.system(size: 24))
+                        Text(loc.currentLanguage == .chinese ? "运行" : "Run")
+                            .font(.system(size: 16, weight: .bold))
+                    }
+                    .foregroundColor(.white)
+                }
+            }
+            .buttonStyle(.plain)
+            
+        default:
+            EmptyView()
+        }
+    }
+    
+    // MARK: - Finished Page (Block Grid with Success Overlay)
+    private var cleaningFinishedPage: some View {
+        VStack(spacing: 0) {
+            // Grid of finished blocks - 8 categories
+            VStack(spacing: 16) {
+                // Row 1
+                let row1: [CleanerCategory] = [.systemJunk, .duplicates, .similarPhotos, .largeFiles]
+                HStack(spacing: 16) {
+                    ForEach(row1, id: \.self) { cat in
+                        createFinishedBlock(for: cat)
+                    }
+                }
                 
-                if showPath {
-                    Text(file.url.deletingLastPathComponent().path)
-                        .font(.system(size: 11))
-                        .foregroundColor(.tertiaryText)
-                        .lineLimit(1)
+                // Row 2
+                let row2: [CleanerCategory] = [.virus, .startupItems, .performanceApps, .appUpdates]
+                HStack(spacing: 16) {
+                    ForEach(row2, id: \.self) { cat in
+                        createFinishedBlock(for: cat)
+                    }
+                }
+            }
+            .padding(.horizontal, 24)
+            .padding(.top, 20)
+            
+            Spacer()
+            
+            // Success message and back button
+            VStack(spacing: 16) {
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.system(size: 50))
+                    .foregroundColor(.green)
+                    .shadow(color: .green.opacity(0.5), radius: 10)
+                
+                Text(loc.currentLanguage == .chinese ? "清理完成！" : "Cleaning Complete!")
+                    .font(.title2)
+                    .bold()
+                    .foregroundColor(.white)
+                
+                Button(action: {
+                    Task { service.resetAll(); showCleaningFinished = false }
+                }) {
+                    Text(loc.currentLanguage == .chinese ? "返回" : "Back")
+                        .font(.system(size: 14, weight: .medium))
+                        .padding(.horizontal, 30)
+                        .padding(.vertical, 10)
+                        .background(Color.white.opacity(0.15))
+                        .cornerRadius(20)
+                        .foregroundColor(.white)
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(.bottom, 40)
+        }
+    }
+    
+    // MARK: - Page Helpers
+    @ViewBuilder
+    private func createScanBlock(for category: CleanerCategory) -> some View {
+        ScanBlockView(
+            category: category,
+            isActive: service.currentCategory == category && service.isScanning,
+            isCompleted: service.scannedCategories.contains(category),
+            title: getDisplayTitle(for: category),
+            resultText: getResultText(for: category),
+            subText: getSubText(for: category),
+            icon: category.icon,
+            gradient: getGradient(for: category),
+            scanningTitle: getScanningTitle(for: category),
+            currentPath: service.currentScanPath,
+            loc: loc,
+            viewDetailsAction: { initialDetailCategory = category; showDetailSheet = true }
+        )
+    }
+    
+    @ViewBuilder
+    private func createResultBlock(for category: CleanerCategory) -> some View {
+        ResultBlockView(
+            title: getDisplayTitle(for: category),
+            resultText: getResultText(for: category),
+            subText: getSubText(for: category),
+            icon: category.icon,
+            gradient: getGradient(for: category),
+            action: { initialDetailCategory = category; showDetailSheet = true }
+        )
+    }
+    
+    @ViewBuilder
+    private func createCleaningBlock(for category: CleanerCategory) -> some View {
+        CleaningBlockView(
+            title: getDisplayTitle(for: category),
+            resultText: getResultText(for: category),
+            subText: getCleaningSubText(for: category),
+            icon: category.icon,
+            gradient: getGradient(for: category),
+            cleaningTitle: getCleaningTitle(for: category),
+            isActive: service.cleaningCurrentCategory == category,
+            isCompleted: service.cleanedCategories.contains(category),
+            currentPath: service.cleaningDescription,
+            loc: loc,
+            viewDetailsAction: { initialDetailCategory = category; showDetailSheet = true }
+        )
+    }
+    
+    @ViewBuilder
+    private func createFinishedBlock(for category: CleanerCategory) -> some View {
+        FinishedBlockView(
+            title: getDisplayTitle(for: category),
+            resultText: getFinishedResultText(for: category),
+            icon: category.icon,
+            gradient: getGradient(for: category),
+            viewDetailsAction: { initialDetailCategory = category; showDetailSheet = true }
+        )
+    }
+    
+    // MARK: - Display Helpers
+    private func getDisplayTitle(for category: CleanerCategory) -> String {
+        switch category {
+        case .systemJunk: return loc.currentLanguage == .chinese ? "系统垃圾" : "System Junk"
+        case .duplicates: return loc.currentLanguage == .chinese ? "重复文件" : "Duplicates"
+        case .similarPhotos: return loc.currentLanguage == .chinese ? "相似照片" : "Similar Photos"
+        case .largeFiles: return loc.currentLanguage == .chinese ? "大文件" : "Large Files"
+        case .virus: return loc.currentLanguage == .chinese ? "病毒防护" : "Virus Protection"
+        case .startupItems: return loc.currentLanguage == .chinese ? "启动项" : "Startup Items"
+        case .performanceApps: return loc.currentLanguage == .chinese ? "性能优化" : "Performance"
+        case .appUpdates: return loc.currentLanguage == .chinese ? "应用更新" : "App Updates"
+        default: return ""
+        }
+    }
+    
+    private func getResultText(for category: CleanerCategory) -> String {
+        let size = service.sizeFor(category: category)
+        if size > 0 || [.systemJunk, .duplicates, .similarPhotos, .largeFiles].contains(category) {
+            return ByteCountFormatter.string(fromByteCount: size, countStyle: .file)
+        }
+        
+        switch category {
+        case .virus: return service.virusThreats.isEmpty ? (loc.currentLanguage == .chinese ? "0 个威胁" : "0 Threats") : "\(service.virusThreats.count) \(loc.currentLanguage == .chinese ? "个威胁" : "Threats")"
+        case .startupItems: return "\(service.startupItems.count) \(loc.currentLanguage == .chinese ? "个项目" : "Items")"
+        case .performanceApps: return "\(service.performanceApps.count) \(loc.currentLanguage == .chinese ? "个应用" : "Apps")"
+        case .appUpdates: return service.hasAppUpdates ? (loc.currentLanguage == .chinese ? "有更新" : "Has Update") : (loc.currentLanguage == .chinese ? "无更新" : "No Updates")
+        default: return "0 KB"
+        }
+    }
+    
+    private func getSubText(for category: CleanerCategory) -> String {
+        switch category {
+        case .systemJunk, .duplicates, .similarPhotos, .largeFiles: return loc.currentLanguage == .chinese ? "可清理" : "Cleanable"
+        case .virus: return service.virusThreats.isEmpty ? (loc.currentLanguage == .chinese ? "已保护" : "Safe") : (loc.currentLanguage == .chinese ? "可移除" : "Removable")
+        case .startupItems: return loc.currentLanguage == .chinese ? "可优化" : "Optimizable"
+        case .performanceApps: return loc.currentLanguage == .chinese ? "待查看" : "To Review"
+        case .appUpdates: return loc.currentLanguage == .chinese ? "要安装" : "To Install"
+        default: return ""
+        }
+    }
+    
+    private func getScanningTitle(for category: CleanerCategory) -> String {
+        switch category {
+        case .systemJunk: return loc.currentLanguage == .chinese ? "正在查找垃圾文件......" : "Searching for junk..."
+        case .duplicates: return loc.currentLanguage == .chinese ? "正在寻找重复文件..." : "Finding duplicates..."
+        case .similarPhotos: return loc.currentLanguage == .chinese ? "正在查找相似照片..." : "Finding similar photos..."
+        case .largeFiles: return loc.currentLanguage == .chinese ? "正在扫描大文件..." : "Scanning for large files..."
+        case .virus: return loc.currentLanguage == .chinese ? "正在查找潜在威胁..." : "Scanning for threats..."
+        case .startupItems: return loc.currentLanguage == .chinese ? "正在分析启动项..." : "Analyzing startup items..."
+        case .performanceApps: return loc.currentLanguage == .chinese ? "正在检查后台应用..." : "Checking background apps..."
+        case .appUpdates: return loc.currentLanguage == .chinese ? "正在检查应用更新..." : "Checking for updates..."
+        default: return ""
+        }
+    }
+    
+    private func getGradient(for category: CleanerCategory) -> LinearGradient {
+        switch category {
+        case .systemJunk:
+            return LinearGradient(colors: [Color(red: 0.2, green: 0.9, blue: 0.6), Color(red: 0.1, green: 0.6, blue: 0.4)], startPoint: .topLeading, endPoint: .bottomTrailing)
+        case .duplicates:
+            return LinearGradient(colors: [Color(red: 0.3, green: 0.7, blue: 1.0), Color(red: 0.1, green: 0.4, blue: 0.8)], startPoint: .topLeading, endPoint: .bottomTrailing)
+        case .similarPhotos:
+            return LinearGradient(colors: [Color(red: 0.7, green: 0.5, blue: 1.0), Color(red: 0.4, green: 0.2, blue: 0.8)], startPoint: .topLeading, endPoint: .bottomTrailing)
+        case .largeFiles:
+            return LinearGradient(colors: [Color(red: 1.0, green: 0.7, blue: 0.3), Color(red: 0.8, green: 0.4, blue: 0.1)], startPoint: .topLeading, endPoint: .bottomTrailing)
+        case .virus:
+            return LinearGradient(colors: [Color(red: 1.0, green: 0.3, blue: 0.4), Color(red: 0.7, green: 0.1, blue: 0.2)], startPoint: .topLeading, endPoint: .bottomTrailing)
+        case .startupItems:
+            return LinearGradient(colors: [Color(red: 0.4, green: 0.4, blue: 0.9), Color(red: 0.2, green: 0.2, blue: 0.7)], startPoint: .topLeading, endPoint: .bottomTrailing)
+        case .performanceApps:
+            return LinearGradient(colors: [Color(red: 1.0, green: 0.4, blue: 0.7), Color(red: 0.8, green: 0.2, blue: 0.5)], startPoint: .topLeading, endPoint: .bottomTrailing)
+        case .appUpdates:
+            return LinearGradient(colors: [Color(red: 0.2, green: 0.8, blue: 1.0), Color(red: 0.1, green: 0.5, blue: 0.8)], startPoint: .topLeading, endPoint: .bottomTrailing)
+        default:
+            return LinearGradient(colors: [Color.gray, Color.black], startPoint: .topLeading, endPoint: .bottomTrailing)
+        }
+    }
+    
+    private func getCleaningSubText(for category: CleanerCategory) -> String {
+        switch category {
+        case .systemJunk, .duplicates, .similarPhotos, .largeFiles: return loc.currentLanguage == .chinese ? "已清理" : "Cleaned"
+        case .virus: return loc.currentLanguage == .chinese ? "已防护" : "Protected"
+        case .performanceApps, .startupItems: return loc.currentLanguage == .chinese ? "已优化" : "Optimized"
+        case .appUpdates: return loc.currentLanguage == .chinese ? "已检查" : "Checked"
+        default: return ""
+        }
+    }
+    
+    private func getCleaningTitle(for category: CleanerCategory) -> String {
+        switch category {
+        case .systemJunk: return loc.currentLanguage == .chinese ? "正在清理垃圾文件..." : "Cleaning junk..."
+        case .duplicates, .similarPhotos, .largeFiles: return loc.currentLanguage == .chinese ? "正在整理文件..." : "Organizing files..."
+        case .virus: return loc.currentLanguage == .chinese ? "正在移除威胁..." : "Removing threats..."
+        case .startupItems: return loc.currentLanguage == .chinese ? "正在优化启动项..." : "Optimizing startup..."
+        case .performanceApps: return loc.currentLanguage == .chinese ? "正在优化性能..." : "Optimizing performance..."
+        case .appUpdates: return loc.currentLanguage == .chinese ? "正在检查更新状态..." : "Checking update status..."
+        default: return ""
+        }
+    }
+    
+    private func getFinishedResultText(for category: CleanerCategory) -> String {
+        if category == .systemJunk && deleteResult != nil {
+            return ByteCountFormatter.string(fromByteCount: deleteResult!.size, countStyle: .file) + " " + (loc.currentLanguage == .chinese ? "已清理" : "Cleaned")
+        }
+        return getCleaningSubText(for: category)
+    }
+}
+
+// MARK: - Dashboard Card Component
+struct DashboardCard: View {
+    let title: String
+    let mainText: String
+    let subText: String
+    let icon: String // SF Symbol
+    let gradient: LinearGradient
+    let action: () -> Void
+    
+    var body: some View {
+        HStack(alignment: .top) {
+            VStack(alignment: .leading, spacing: 12) {
+                // Header (Checkbox visually represented by Icon for now per design)
+                HStack {
+                     Image(systemName: "checkmark.square.fill") // Fake checkbox for aesthetic
+                        .foregroundColor(.white.opacity(0.6))
+                     Text(title)
+                        .font(.headline)
+                        .foregroundColor(.white.opacity(0.9))
+                }
+                
+                Spacer()
+                
+                Text(mainText)
+                    .font(.system(size: 24, weight: .bold))
+                    .foregroundColor(.white)
+                
+                Text(subText)
+                    .font(.subheadline)
+                    .foregroundColor(.white.opacity(0.6))
+            }
+            
+            Spacer()
+            
+            // Right Side Graphic (Glassmorphism Icon)
+            VStack {
+                ZStack {
+                    // Glassy background for icon
+                    Circle()
+                        .fill(.ultraThinMaterial)
+                        .frame(width: 80, height: 80)
+                        .shadow(radius: 10)
+                    
+                    Image(systemName: icon)
+                         .resizable()
+                         .aspectRatio(contentMode: .fit)
+                         .frame(width: 40, height: 40)
+                         .foregroundColor(.white)
+                }
+                
+                Spacer()
+                
+                Button("查看") { action() } // View Button
+                .buttonStyle(SmallGlassButtonStyle())
+            }
+        }
+        .padding(20)
+        .frame(height: 180)
+        .background(
+            ZStack {
+                gradient.opacity(0.3) // Tint
+                Color.black.opacity(0.3) // Darken
+                Rectangle().fill(.thinMaterial) // Blur
+            }
+        )
+        .cornerRadius(20)
+        .overlay(
+            RoundedRectangle(cornerRadius: 20)
+                .stroke(LinearGradient(colors: [.white.opacity(0.3), .clear], startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 1)
+        )
+        .shadow(color: Color.black.opacity(0.3), radius: 10, x: 0, y: 5)
+    }
+}
+
+// MARK: - Status Pill for Scanning
+struct StatusPill: View {
+    let label: String
+    let active: Bool
+    
+    var body: some View {
+        Text(label)
+            .font(.caption)
+            .fontWeight(.bold)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 8)
+            .background(active ? Color.purple : Color.white.opacity(0.1))
+            .cornerRadius(20)
+            .foregroundColor(.white)
+            .overlay(
+                RoundedRectangle(cornerRadius: 20)
+                    .stroke(active ? Color.white.opacity(0.5) : Color.clear, lineWidth: 1)
+            )
+            .animation(.easeInOut, value: active)
+    }
+}
+
+// MARK: - Small Glass Button
+struct SmallGlassButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.caption)
+            .foregroundColor(.white)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+            .background(Color.white.opacity(0.2))
+            .cornerRadius(8)
+            .scaleEffect(configuration.isPressed ? 0.95 : 1.0)
+    }
+}
+
+// Block state for consistent rendering
+enum ScanBlockState {
+    case idle       // Not yet scanned
+    case active     // Currently scanning/cleaning
+    case completed  // Finished
+}
+
+// MARK: - Scan Block View (Fixed Size, No Flashing)
+struct ScanBlockView: View {
+    let category: CleanerCategory
+    let isActive: Bool
+    let isCompleted: Bool
+    let title: String
+    let resultText: String
+    let subText: String
+    let icon: String
+    let gradient: LinearGradient
+    let scanningTitle: String
+    let currentPath: String
+    @ObservedObject var loc: LocalizationManager
+    var viewDetailsAction: (() -> Void)? = nil
+    
+    private var state: ScanBlockState {
+        if isActive { return .active }
+        if isCompleted { return .completed }
+        return .idle
+    }
+    
+    var body: some View {
+        // Fixed size container - prevents layout shifts
+        ZStack {
+            // Background based on state
+            backgroundView
+            
+            // Content based on state
+            contentView
+        }
+        .frame(height: 180) // Fixed height to prevent jumping
+        .cornerRadius(20)
+        .overlay(
+            RoundedRectangle(cornerRadius: 20)
+                .stroke(borderColor, lineWidth: 1)
+        )
+        .animation(.easeInOut(duration: 0.3), value: state)
+    }
+    
+    private var borderColor: Color {
+        switch state {
+        case .active: return Color.white.opacity(0.3)
+        case .completed: return Color.white.opacity(0.1)
+        case .idle: return Color.white.opacity(0.05)
+        }
+    }
+    
+    @ViewBuilder
+    private var backgroundView: some View {
+        switch state {
+        case .active:
+            // 扫描中：半透明背景 + 描边闪烁感
+            ZStack {
+                Color.black.opacity(0.3)
+                gradient.opacity(0.15)
+                
+                // 动效背景装饰
+                RoundedRectangle(cornerRadius: 20)
+                    .fill(gradient)
+                    .opacity(0.15)
+                    .mask(LinearGradient(colors: [.black, .clear], startPoint: .topLeading, endPoint: .bottomTrailing))
+            }
+        case .completed:
+            // 完成后：经典的玻璃态 (Glassmorphism)
+            ZStack {
+                Color.white.opacity(0.06)
+                gradient.opacity(0.12)
+                LinearGradient(
+                    colors: [.white.opacity(0.1), .clear],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+            }
+        case .idle:
+            // 待扫描：纯净极简
+            ZStack {
+                Color.black.opacity(0.15)
+                Color.white.opacity(0.02)
+            }
+        }
+    }
+    
+    @ViewBuilder
+    private var contentView: some View {
+        switch state {
+        case .active:
+            activeContent
+        case .completed:
+            completedContent
+        case .idle:
+            idleContent
+        }
+    }
+    
+    // Active state content
+    private var activeContent: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(scanningTitle)
+                .font(.system(size: 20, weight: .bold))
+                .foregroundColor(.white)
+                .lineLimit(2)
+            
+            Spacer()
+            
+            // Icon with glow
+            HStack {
+                Spacer()
+                ZStack {
+                    Circle()
+                        .fill(RadialGradient(colors: [Color.white.opacity(0.25), Color.clear], center: .center, startRadius: 20, endRadius: 60))
+                        .frame(width: 100, height: 100)
+                    
+                    RoundedRectangle(cornerRadius: 18)
+                        .fill(gradient)
+                        .frame(width: 70, height: 70)
+                        .rotationEffect(.degrees(45))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 18)
+                                .stroke(Color.white.opacity(0.4), lineWidth: 1.5)
+                                .rotationEffect(.degrees(45))
+                        )
+                        .shadow(color: Color.black.opacity(0.3), radius: 8)
+                    
+                    Image(systemName: icon)
+                        .font(.system(size: 28, weight: .medium))
+                        .foregroundColor(.white)
+                }
+                Spacer()
+            }
+            
+            Spacer()
+            
+            Text(currentPath)
+                .font(.caption2)
+                .foregroundColor(.white.opacity(0.6))
+                .lineLimit(1)
+                .truncationMode(.middle)
+        }
+        .padding(16)
+    }
+    
+    // Completed state content
+    private var completedContent: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text(title)
+                    .font(.caption)
+                    .fontWeight(.medium)
+                    .foregroundColor(.white.opacity(0.6))
+                Spacer()
+                // “查看详情”入口
+                if let action = viewDetailsAction {
+                    Button(action: action) {
+                        HStack(spacing: 2) {
+                            Text(loc.currentLanguage == .chinese ? "查看详情" : "Details")
+                            Image(systemName: "chevron.right")
+                        }
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundColor(.purple)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(Color.white.opacity(0.9))
+                        .cornerRadius(12)
+                    }
+                    .buttonStyle(.plain)
                 }
             }
             
             Spacer()
             
-            Text(file.formattedSize)
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundColor(.white)
-        }
-        .padding(12)
-        .background(Color.white.opacity(0.05))
-        .cornerRadius(10)
-    }
-}
-
-// MARK: - 可点击的分类行（带钻取）
-struct DrillDownCategoryRow: View {
-    let icon: String
-    let title: String
-    let size: Int64
-    let count: Int
-    let color: Color
-    let onTap: () -> Void
-    
-    var body: some View {
-        Button(action: onTap) {
-            HStack(spacing: 16) {
-                Image(systemName: "checkmark.circle.fill")
-                    .foregroundColor(.blue)
-                    .font(.system(size: 22))
-                
-                ZStack {
-                    RoundedRectangle(cornerRadius: 10)
-                        .fill(color.opacity(0.15))
-                        .frame(width: 44, height: 44)
-                    Image(systemName: icon)
-                        .font(.system(size: 20))
-                        .foregroundColor(color)
-                }
-                
+            HStack(alignment: .bottom) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(title)
-                        .font(.system(size: 14, weight: .medium))
+                    Text(resultText)
+                        .font(.system(size: 20, weight: .bold))
                         .foregroundColor(.white)
                     
-                    if count > 0 {
-                        Text("\(count) 个文件")
-                            .font(.caption)
-                            .foregroundColor(.secondaryText)
-                    }
+                    Text(subText)
+                        .font(.caption2)
+                        .foregroundColor(.white.opacity(0.6))
                 }
                 
                 Spacer()
                 
-                Image(systemName: "chevron.right")
-                    .foregroundColor(.secondaryText)
-                    .font(.system(size: 14))
-                
-                Text(ByteCountFormatter.string(fromByteCount: size, countStyle: .file))
-                    .font(.system(size: 14, weight: .bold))
-                    .foregroundColor(.white)
-                    .frame(width: 90, alignment: .trailing)
+                ZStack {
+                    RoundedRectangle(cornerRadius: 12)
+                        .fill(gradient.opacity(0.5))
+                        .frame(width: 45, height: 45)
+                        .rotationEffect(.degrees(45))
+                    
+                    Image(systemName: icon)
+                        .font(.system(size: 24))
+                        .foregroundColor(.white.opacity(0.4))
+                }
             }
-            .padding(.vertical, 12)
-            .padding(.horizontal, 16)
-            .background(Color.white.opacity(0.05))
-            .cornerRadius(12)
+            
+            Spacer()
         }
-        .buttonStyle(.plain)
+        .padding(14)
     }
-}
-
-// MARK: - 系统垃圾卡片组件
-struct SystemJunkCard: View {
-    let title: String
-    let size: Int64
-    let itemCount: Int
-    let onTap: () -> Void
     
-    var body: some View {
-        Button(action: onTap) {
-            HStack(spacing: 16) {
+    // Idle state content
+    private var idleContent: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(title)
+                .font(.caption)
+                .foregroundColor(.white.opacity(0.5))
+            
+            Spacer()
+            
+            // Faded icon
+            HStack {
+                Spacer()
                 ZStack {
                     Circle()
-                        .fill(Color.pink.opacity(0.2))
-                        .frame(width: 56, height: 56)
-                    Image(systemName: "trash.fill")
+                        .fill(gradient.opacity(0.25))
+                        .frame(width: 60, height: 60)
+                    
+                    Image(systemName: icon)
                         .font(.system(size: 24))
-                        .foregroundColor(.pink)
+                        .foregroundColor(.white.opacity(0.4))
+                }
+                Spacer()
+            }
+            
+            Spacer()
+        }
+        .padding(14)
+    }
+}
+
+// MARK: - Cleaning Block View
+struct CleaningBlockView: View {
+    let title: String
+    let resultText: String
+    let subText: String
+    let icon: String
+    let gradient: LinearGradient
+    let cleaningTitle: String
+    let isActive: Bool
+    let isCompleted: Bool
+    let currentPath: String
+    @ObservedObject var loc: LocalizationManager
+    var viewDetailsAction: (() -> Void)? = nil
+    
+    // Action for "View Details" button
+    
+    var body: some View {
+        ZStack {
+            // Background
+            ZStack {
+                if isActive {
+                    gradient.opacity(0.8)
+                } else if isCompleted {
+                    Color.white.opacity(0.06)
+                    gradient.opacity(0.1)
+                } else {
+                    Color.black.opacity(0.15)
+                    Color.white.opacity(0.02)
                 }
                 
-                VStack(alignment: .leading, spacing: 4) {
+                // 玻璃高光
+                LinearGradient(
+                    colors: [.white.opacity(0.1), .clear],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+            }
+            
+            // Content
+            if isActive {
+                // Active cleaning
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(cleaningTitle)
+                        .font(.system(size: 18, weight: .bold))
+                        .foregroundColor(.white)
+                        .lineLimit(2)
+                    
+                    Spacer()
+                    
+                    HStack {
+                        Spacer()
+                        ZStack {
+                            Circle()
+                                .fill(RadialGradient(colors: [Color.white.opacity(0.25), Color.clear], center: .center, startRadius: 20, endRadius: 50))
+                                .frame(width: 80, height: 80)
+                            
+                            ProgressView()
+                                .scaleEffect(1.5)
+                                .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                        }
+                        Spacer()
+                    }
+                    
+                    Spacer()
+                    
+                    Text(currentPath)
+                        .font(.caption2)
+                        .foregroundColor(.white.opacity(0.6))
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+                .padding(14)
+            } else if isCompleted {
+                // Completed
+                VStack(alignment: .leading, spacing: 6) {
                     HStack {
                         Image(systemName: "checkmark.circle.fill")
-                            .foregroundColor(.blue)
-                            .font(.system(size: 16))
+                            .foregroundColor(.green)
                         Text(title)
-                            .font(.system(size: 16, weight: .semibold))
-                            .foregroundColor(.white)
+                            .font(.caption)
+                            .fontWeight(.medium)
+                            .foregroundColor(.white.opacity(0.7))
+                        Spacer()
+                        if let action = viewDetailsAction {
+                            Button(action: action) {
+                                HStack(spacing: 2) {
+                                    Text(loc.currentLanguage == .chinese ? "查看详情" : "Details")
+                                    Image(systemName: "chevron.right")
+                                }
+                                .font(.system(size: 10, weight: .bold))
+                                .foregroundColor(.purple)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 4)
+                                .background(Color.white.opacity(0.9))
+                                .cornerRadius(12)
+                            }
+                            .buttonStyle(.plain)
+                        }
                     }
-                    Text("\(itemCount) 个项目")
-                        .font(.caption)
-                        .foregroundColor(.secondaryText)
-                }
-                
-                Spacer()
-                
-                Text(ByteCountFormatter.string(fromByteCount: size, countStyle: .file))
-                    .font(.system(size: 18, weight: .bold))
-                    .foregroundColor(.white)
-                
-                Image(systemName: "chevron.right")
-                    .foregroundColor(.secondaryText)
-            }
-            .padding(16)
-            .background(Color.white.opacity(0.08))
-            .cornerRadius(12)
-            .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.white.opacity(0.1), lineWidth: 1))
-        }
-        .buttonStyle(.plain)
-    }
-}
-
-// MARK: - 小型结果卡片
-struct MiniResultCard: View {
-    let icon: String
-    let title: String
-    let size: Int64
-    let color: Color
-    
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Image(systemName: icon)
-                    .font(.system(size: 16))
-                    .foregroundColor(color)
-                Spacer()
-            }
-            Text(title)
-                .font(.system(size: 11))
-                .foregroundColor(.secondaryText)
-            Text(ByteCountFormatter.string(fromByteCount: size, countStyle: .file))
-                .font(.system(size: 14, weight: .bold))
-                .foregroundColor(.white)
-        }
-        .padding(12)
-        .frame(maxWidth: .infinity)
-        .background(Color.white.opacity(0.05))
-        .cornerRadius(10)
-    }
-}
-
-// MARK: - 可点击的小型结果卡片
-struct ClickableMiniCard: View {
-    let icon: String
-    let title: String
-    let size: Int64
-    let color: Color
-    let onTap: () -> Void
-    
-    var body: some View {
-        Button(action: onTap) {
-            VStack(alignment: .leading, spacing: 8) {
-                HStack {
-                    Image(systemName: icon)
-                        .font(.system(size: 16))
-                        .foregroundColor(color)
+                    
                     Spacer()
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 10))
-                        .foregroundColor(.secondaryText)
+                    
+                    HStack(alignment: .bottom) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(resultText)
+                                .font(.system(size: 20, weight: .bold))
+                                .foregroundColor(.white)
+                                .lineLimit(2)
+                            
+                            Text(subText)
+                                .font(.caption2)
+                                .foregroundColor(.white.opacity(0.6))
+                        }
+                        
+                        Spacer()
+                        
+                        ZStack {
+                            RoundedRectangle(cornerRadius: 12)
+                                .fill(gradient.opacity(0.5))
+                                .frame(width: 45, height: 45)
+                                .rotationEffect(.degrees(45))
+                            
+                            Image(systemName: icon)
+                                .font(.system(size: 24))
+                                .foregroundColor(.white.opacity(0.4))
+                        }
+                    }
+                    
+                    Spacer()
                 }
-                Text(title)
-                    .font(.system(size: 11))
-                    .foregroundColor(.secondaryText)
-                Text(ByteCountFormatter.string(fromByteCount: size, countStyle: .file))
-                    .font(.system(size: 14, weight: .bold))
-                    .foregroundColor(.white)
+                .padding(12)
+            } else {
+                // Idle
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(title)
+                        .font(.caption)
+                        .foregroundColor(.white.opacity(0.4))
+                    
+                    Spacer()
+                    
+                    HStack {
+                        Spacer()
+                        ZStack {
+                            Circle()
+                                .fill(gradient.opacity(0.2))
+                                .frame(width: 50, height: 50)
+                            
+                            Image(systemName: icon)
+                                .font(.system(size: 20))
+                                .foregroundColor(.white.opacity(0.3))
+                        }
+                        Spacer()
+                    }
+                    
+                    Spacer()
+                }
+                .padding(12)
             }
-            .padding(12)
-            .frame(maxWidth: .infinity)
-            .background(Color.white.opacity(0.05))
-            .cornerRadius(10)
+        }
+        .frame(height: 180)
+        .cornerRadius(20)
+        .overlay(
+            RoundedRectangle(cornerRadius: 20)
+                .stroke(isActive ? Color.white.opacity(0.3) : Color.white.opacity(0.05), lineWidth: 1)
+        )
+        .animation(.easeInOut(duration: 0.3), value: isActive)
+        .animation(.easeInOut(duration: 0.3), value: isCompleted)
+    }
+}
+
+// MARK: - Result Block View (for completed scan results)
+struct ResultBlockView: View {
+    let title: String
+    let resultText: String
+    let subText: String
+    let icon: String
+    let gradient: LinearGradient
+    let action: () -> Void
+    
+    var body: some View {
+        Button(action: action) {
+            ZStack {
+                // 玻璃态背景
+                ZStack {
+                    Color.white.opacity(0.06)
+                    gradient.opacity(0.08)
+                    LinearGradient(
+                        colors: [.white.opacity(0.1), .clear],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                }
+                
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(title)
+                        .font(.caption)
+                        .fontWeight(.medium)
+                        .foregroundColor(.white.opacity(0.6))
+                    
+                    Spacer()
+                    
+                    HStack {
+                        Spacer()
+                        ZStack {
+                            RoundedRectangle(cornerRadius: 14)
+                                .fill(gradient.opacity(0.6))
+                                .frame(width: 55, height: 55)
+                                .rotationEffect(.degrees(45))
+                            
+                            Image(systemName: icon)
+                                .font(.system(size: 22))
+                                .foregroundColor(.white)
+                        }
+                        Spacer()
+                    }
+                    
+                    Spacer()
+                    
+                    Text(resultText)
+                        .font(.system(size: 16, weight: .bold))
+                        .foregroundColor(.white)
+                        .lineLimit(2)
+                    
+                    Text(subText)
+                        .font(.caption)
+                        .foregroundColor(.white.opacity(0.5))
+                }
+                .padding(14)
+            }
+            .frame(height: 180)
+            .cornerRadius(20)
             .overlay(
-                RoundedRectangle(cornerRadius: 10)
+                RoundedRectangle(cornerRadius: 20)
                     .stroke(Color.white.opacity(0.1), lineWidth: 1)
             )
         }
@@ -1256,648 +1404,100 @@ struct ClickableMiniCard: View {
     }
 }
 
-// MARK: - 全分类详情弹窗
-struct AllCategoriesDetailSheet: View {
-    @ObservedObject var service: SmartCleanerService
-    @ObservedObject var loc: LocalizationManager
-    @Binding var isPresented: Bool
-    var initialCategory: CleanerCategory?
-    
-    @State private var selectedMainCategory: CleanerCategory? = nil
-    @State private var selectedSubcategory: CleanerCategory? = nil
-    
-    var body: some View {
-        VStack(spacing: 0) {
-            // 顶部栏
-            HStack {
-                Button(action: {
-                    isPresented = false
-                }) {
-                    HStack(spacing: 4) {
-                        Image(systemName: "chevron.left")
-                        Text(loc.currentLanguage == .chinese ? "返回摘要" : "Back")
-                    }
-                    .foregroundColor(.secondaryText)
-                }
-                .buttonStyle(.plain)
-                
-                Spacer()
-                
-                Text(loc.currentLanguage == .chinese ? "清理详情" : "Cleanup Details")
-                    .font(.headline)
-                    .foregroundColor(.white)
-                
-                Spacer()
-                
-                HStack(spacing: 4) { Image(systemName: "chevron.left"); Text("Back") }.opacity(0)
-            }
-            .padding()
-            .background(Color.black.opacity(0.3))
-            
-            // 直接使用左右布局
-            allCategoriesOverview
-        }
-        .frame(width: 900, height: 650)
-        .background(
-            LinearGradient(
-                colors: [Color(red: 0.12, green: 0.08, blue: 0.22), Color(red: 0.08, green: 0.12, blue: 0.28)],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-        )
-        .onAppear {
-            if let initial = initialCategory {
-                if initial == .systemJunk {
-                    selectedMainCategory = .systemJunk
-                } else if [.userCache, .systemCache, .oldUpdates, .languageFiles, .systemLogs, .userLogs, .brokenLoginItems].contains(initial) {
-                    selectedMainCategory = .systemJunk
-                    selectedSubcategory = initial
-                } else {
-                    selectedMainCategory = initial
-                }
-            }
-        }
-    }
-    
-    // 所有主分类概览 - 左右布局
-    private var allCategoriesOverview: some View {
-        HStack(spacing: 0) {
-            // 左侧分类列表
-            VStack(alignment: .leading, spacing: 0) {
-                HStack {
-                    Text(loc.currentLanguage == .chinese ? "扫描结果" : "Scan Results")
-                        .font(.headline)
-                        .foregroundColor(.white)
-                    Spacer()
-                }
-                .padding()
-                
-                ScrollView {
-                    VStack(spacing: 8) {
-                        // 系统垃圾
-                        MainCategoryRow(
-                            icon: "trash.fill",
-                            title: loc.currentLanguage == .chinese ? "系统垃圾" : "System Junk",
-                            size: service.systemJunkTotalSize,
-                            count: service.countFor(category: .systemJunk),
-                            color: .pink,
-                            isSelected: selectedMainCategory == .systemJunk,
-                            onTap: { selectedMainCategory = .systemJunk; selectedSubcategory = nil }
-                        )
-                        
-                        // 重复文件
-                        MainCategoryRow(
-                            icon: "doc.on.doc",
-                            title: loc.currentLanguage == .chinese ? "重复文件" : "Duplicates",
-                            size: service.sizeFor(category: .duplicates),
-                            count: service.duplicateGroups.flatMap { $0.files }.count,
-                            color: .blue,
-                            isSelected: selectedMainCategory == .duplicates,
-                            onTap: { selectedMainCategory = .duplicates; selectedSubcategory = nil }
-                        )
-                        
-                        // 相似照片
-                        MainCategoryRow(
-                            icon: "photo.on.rectangle",
-                            title: loc.currentLanguage == .chinese ? "相似照片" : "Similar Photos",
-                            size: service.sizeFor(category: .similarPhotos),
-                            count: service.similarPhotoGroups.flatMap { $0.files }.count,
-                            color: .purple,
-                            isSelected: selectedMainCategory == .similarPhotos,
-                            onTap: { selectedMainCategory = .similarPhotos; selectedSubcategory = nil }
-                        )
-                        
-                        // 大文件
-                        MainCategoryRow(
-                            icon: "externaldrive.fill",
-                            title: loc.currentLanguage == .chinese ? "大文件" : "Large Files",
-                            size: service.sizeFor(category: .largeFiles),
-                            count: service.largeFiles.count,
-                            color: .orange,
-                            isSelected: selectedMainCategory == .largeFiles,
-                            onTap: { selectedMainCategory = .largeFiles; selectedSubcategory = nil }
-                        )
-                    }
-                    .padding()
-                }
-                
-                Spacer()
-            }
-            .frame(width: 280)
-            .background(Color.black.opacity(0.2))
-            
-            // 右侧详情区域 - 根据选择的分类显示内容
-            if let mainCategory = selectedMainCategory {
-                if mainCategory == .systemJunk {
-                    // 系统垃圾 - 显示子分类列表
-                    systemJunkRightPane
-                } else {
-                    // 其他分类 - 直接显示文件列表
-                    rightPaneFileList(for: mainCategory)
-                }
-            } else {
-                // 未选择时显示提示
-                VStack {
-                    Spacer()
-                    Image(systemName: "arrow.left")
-                        .font(.system(size: 48))
-                        .foregroundColor(.secondaryText.opacity(0.5))
-                    Text(loc.currentLanguage == .chinese ? "选择左侧分类查看详情" : "Select a category to view details")
-                        .font(.title3)
-                        .foregroundColor(.secondaryText)
-                    Spacer()
-                }
-                .frame(maxWidth: .infinity)
-            }
-        }
-    }
-    
-    // 系统垃圾右侧面板 - 显示子分类或具体文件
-    private var systemJunkRightPane: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            // 标题
-            VStack(alignment: .leading, spacing: 8) {
-                Text(loc.currentLanguage == .chinese ? "系统垃圾" : "System Junk")
-                    .font(.title)
-                    .bold()
-                    .foregroundColor(.white)
-                Text(loc.currentLanguage == .chinese ? "清理您的系统来获得最大的性能和释放自由空间。" : "Clean your system for best performance and free space.")
-                    .font(.subheadline)
-                    .foregroundColor(.secondaryText)
-            }
-            .padding()
-            
-            if let subcategory = selectedSubcategory {
-                // 显示该子分类的文件列表
-                VStack(alignment: .leading, spacing: 8) {
-                    Button(action: { selectedSubcategory = nil }) {
-                        HStack(spacing: 4) {
-                            Image(systemName: "chevron.left")
-                            Text(loc.currentLanguage == .chinese ? "返回子分类" : "Back")
-                        }
-                        .foregroundColor(.blue)
-                        .font(.system(size: 13))
-                    }
-                    .buttonStyle(.plain)
-                    .padding(.horizontal)
-                    
-                    Text(loc.currentLanguage == .chinese ? subcategory.rawValue : subcategory.englishName)
-                        .font(.headline)
-                        .foregroundColor(.white)
-                        .padding(.horizontal)
-                }
-                
-                // 文件列表
-                ScrollView {
-                    LazyVStack(spacing: 8) {
-                        ForEach(filesFor(category: subcategory).sorted { $0.size > $1.size }, id: \.url) { file in
-                            FileItemRow(file: file, showPath: true, onToggle: {
-                                service.toggleFileSelection(file: file, in: subcategory)
-                            })
-                        }
-                    }
-                    .padding(.horizontal)
-                }
-            } else {
-                // 显示子分类列表
-                ScrollView {
-                    VStack(spacing: 12) {
-                        DrillDownCategoryRow(icon: "person.crop.circle.fill", title: loc.currentLanguage == .chinese ? "用户缓存文件" : "User Cache", size: service.sizeFor(category: .userCache), count: service.countFor(category: .userCache), color: .cyan, onTap: { selectedSubcategory = .userCache })
-                        DrillDownCategoryRow(icon: "internaldrive.fill", title: loc.currentLanguage == .chinese ? "系统缓存文件" : "System Cache", size: service.sizeFor(category: .systemCache), count: service.countFor(category: .systemCache), color: .blue, onTap: { selectedSubcategory = .systemCache })
-                        DrillDownCategoryRow(icon: "arrow.down.circle.fill", title: loc.currentLanguage == .chinese ? "旧更新" : "Old Updates", size: service.sizeFor(category: .oldUpdates), count: service.countFor(category: .oldUpdates), color: .orange, onTap: { selectedSubcategory = .oldUpdates })
-                        DrillDownCategoryRow(icon: "textformat.abc", title: loc.currentLanguage == .chinese ? "语言文件" : "Language Files", size: service.sizeFor(category: .languageFiles), count: service.countFor(category: .languageFiles), color: .purple, onTap: { selectedSubcategory = .languageFiles })
-                        DrillDownCategoryRow(icon: "doc.text.fill", title: loc.currentLanguage == .chinese ? "系统日志文件" : "System Logs", size: service.sizeFor(category: .systemLogs), count: service.countFor(category: .systemLogs), color: .green, onTap: { selectedSubcategory = .systemLogs })
-                        DrillDownCategoryRow(icon: "person.text.rectangle.fill", title: loc.currentLanguage == .chinese ? "用户日志文件" : "User Logs", size: service.sizeFor(category: .userLogs), count: service.countFor(category: .userLogs), color: .teal, onTap: { selectedSubcategory = .userLogs })
-                        DrillDownCategoryRow(icon: "exclamationmark.triangle.fill", title: loc.currentLanguage == .chinese ? "损坏的登录项" : "Broken Login Items", size: service.sizeFor(category: .brokenLoginItems), count: service.countFor(category: .brokenLoginItems), color: .red, onTap: { selectedSubcategory = .brokenLoginItems })
-                    }
-                    .padding()
-                }
-            }
-            
-            Spacer()
-        }
-        .frame(maxWidth: .infinity)
-    }
-    
-    // 右侧文件列表面板
-    private func rightPaneFileList(for category: CleanerCategory) -> some View {
-        VStack(alignment: .leading, spacing: 0) {
-            // 标题
-            VStack(alignment: .leading, spacing: 8) {
-                Text(loc.currentLanguage == .chinese ? category.rawValue : category.englishName)
-                    .font(.title)
-                    .bold()
-                    .foregroundColor(.white)
-                
-                let files = filesFor(category: category)
-                Text("\(files.count) 个项目，共 \(ByteCountFormatter.string(fromByteCount: files.reduce(0) { $0 + $1.size }, countStyle: .file))")
-                    .font(.subheadline)
-                    .foregroundColor(.secondaryText)
-            }
-            .padding()
-            
-            // 文件列表
-            ScrollView {
-                LazyVStack(spacing: 8) {
-                    ForEach(filesFor(category: category).sorted { $0.size > $1.size }, id: \.url) { file in
-                        FileItemRow(file: file, showPath: true, onToggle: {
-                            service.toggleFileSelection(file: file, in: category)
-                        })
-                    }
-                }
-                .padding(.horizontal)
-            }
-            
-            Spacer()
-        }
-        .frame(maxWidth: .infinity)
-    }
-    
-    // 获取分类对应的文件列表
-    private func filesFor(category: CleanerCategory) -> [CleanerFileItem] {
-        switch category {
-        case .userCache: return service.userCacheFiles
-        case .systemCache: return service.systemCacheFiles
-        case .oldUpdates: return service.oldUpdateFiles
-        case .languageFiles: return service.languageFiles
-        case .systemLogs: return service.systemLogFiles
-        case .userLogs: return service.userLogFiles
-        case .brokenLoginItems: return service.brokenLoginItems
-        case .duplicates: return service.duplicateGroups.flatMap { $0.files }
-        case .similarPhotos: return service.similarPhotoGroups.flatMap { $0.files }
-        case .largeFiles: return service.largeFiles
-        case .localizations: return service.localizationFiles
-        default: return []
-        }
-    }
-    
-    // 系统垃圾子分类视图
-    private var systemJunkSubcategoriesView: some View {
-        HStack(spacing: 0) {
-            // 左侧分类列表
-            VStack(alignment: .leading, spacing: 0) {
-                HStack {
-                    Button(loc.currentLanguage == .chinese ? "取消全选" : "Deselect All") {}
-                    .buttonStyle(.plain)
-                    .foregroundColor(.secondaryText)
-                    .font(.caption)
-                    Spacer()
-                    Text(loc.currentLanguage == .chinese ? "排序方式按 大小" : "Sort by Size")
-                        .font(.caption)
-                        .foregroundColor(.secondaryText)
-                }
-                .padding(.horizontal)
-                .padding(.vertical, 12)
-                
-                SystemJunkCategoryRow(icon: "trash.fill", title: loc.currentLanguage == .chinese ? "系统垃圾" : "System Junk", size: service.systemJunkTotalSize, isSelected: true, color: .pink)
-                    .padding(.horizontal)
-                
-                Spacer()
-            }
-            .frame(width: 260)
-            .background(Color.black.opacity(0.2))
-            
-            // 右侧子分类列表
-            VStack(alignment: .leading, spacing: 0) {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text(loc.currentLanguage == .chinese ? "系统垃圾" : "System Junk")
-                        .font(.title)
-                        .bold()
-                        .foregroundColor(.white)
-                    Text(loc.currentLanguage == .chinese ? "清理您的系统来获得最大的性能和释放自由空间。" : "Clean your system for best performance and free space.")
-                        .font(.subheadline)
-                        .foregroundColor(.secondaryText)
-                }
-                .padding()
-                
-                ScrollView {
-                    VStack(spacing: 12) {
-                        DrillDownCategoryRow(icon: "person.crop.circle.fill", title: loc.currentLanguage == .chinese ? "用户缓存文件" : "User Cache", size: service.sizeFor(category: .userCache), count: service.countFor(category: .userCache), color: .cyan, onTap: { selectedSubcategory = .userCache })
-                        DrillDownCategoryRow(icon: "internaldrive.fill", title: loc.currentLanguage == .chinese ? "系统缓存文件" : "System Cache", size: service.sizeFor(category: .systemCache), count: service.countFor(category: .systemCache), color: .blue, onTap: { selectedSubcategory = .systemCache })
-                        DrillDownCategoryRow(icon: "arrow.down.circle.fill", title: loc.currentLanguage == .chinese ? "旧更新" : "Old Updates", size: service.sizeFor(category: .oldUpdates), count: service.countFor(category: .oldUpdates), color: .orange, onTap: { selectedSubcategory = .oldUpdates })
-                        DrillDownCategoryRow(icon: "textformat.abc", title: loc.currentLanguage == .chinese ? "语言文件" : "Language Files", size: service.sizeFor(category: .languageFiles), count: service.countFor(category: .languageFiles), color: .purple, onTap: { selectedSubcategory = .languageFiles })
-                        DrillDownCategoryRow(icon: "doc.text.fill", title: loc.currentLanguage == .chinese ? "系统日志文件" : "System Logs", size: service.sizeFor(category: .systemLogs), count: service.countFor(category: .systemLogs), color: .green, onTap: { selectedSubcategory = .systemLogs })
-                        DrillDownCategoryRow(icon: "person.text.rectangle.fill", title: loc.currentLanguage == .chinese ? "用户日志文件" : "User Logs", size: service.sizeFor(category: .userLogs), count: service.countFor(category: .userLogs), color: .teal, onTap: { selectedSubcategory = .userLogs })
-                        DrillDownCategoryRow(icon: "exclamationmark.triangle.fill", title: loc.currentLanguage == .chinese ? "损坏的登录项" : "Broken Login Items", size: service.sizeFor(category: .brokenLoginItems), count: service.countFor(category: .brokenLoginItems), color: .red, onTap: { selectedSubcategory = .brokenLoginItems })
-                    }
-                    .padding()
-                }
-                
-                Spacer()
-            }
-            .frame(maxWidth: .infinity)
-        }
-    }
-}
-
-// MARK: - 主分类行
-struct MainCategoryRow: View {
-    let icon: String
+// MARK: - Finished Block View (all blocks completed)
+struct FinishedBlockView: View {
     let title: String
-    let size: Int64
-    let count: Int
-    let color: Color
-    let isSelected: Bool
-    let onTap: () -> Void
+    let resultText: String
+    let icon: String
+    let gradient: LinearGradient
+    var viewDetailsAction: (() -> Void)? = nil
     
     var body: some View {
-        Button(action: onTap) {
-            HStack(spacing: 12) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 8)
-                        .fill(color.opacity(0.2))
-                        .frame(width: 40, height: 40)
-                    Image(systemName: icon)
-                        .font(.system(size: 18))
-                        .foregroundColor(color)
-                }
-                
-                VStack(alignment: .leading, spacing: 2) {
+        ZStack {
+            // 玻璃态背景
+            ZStack {
+                Color.white.opacity(0.06)
+                gradient.opacity(0.05)
+                LinearGradient(
+                    colors: [.white.opacity(0.08), .clear],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+            }
+            
+            VStack(alignment: .leading, spacing: 6) {
+                HStack {
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundColor(.green)
+                        .font(.caption)
                     Text(title)
-                        .font(.system(size: 14, weight: .medium))
+                        .font(.caption)
+                        .fontWeight(.medium)
+                        .foregroundColor(.white.opacity(0.7))
+                    Spacer()
+                    // “查看详情”入口 (可选)
+                    if let action = viewDetailsAction {
+                        Button(action: action) {
+                            HStack(spacing: 2) {
+                                let lang = LocalizationManager.shared.currentLanguage
+                                Text(lang == .chinese ? "查看详情" : "Details")
+                                Image(systemName: "chevron.right")
+                            }
+                            .font(.system(size: 10, weight: .bold))
+                            .foregroundColor(.purple)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(Color.white.opacity(0.9))
+                            .cornerRadius(12)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                
+                Spacer()
+                
+                HStack(alignment: .bottom) {
+                    Text(resultText)
+                        .font(.system(size: 14, weight: .bold))
                         .foregroundColor(.white)
-                    Text("\(count) 个项目")
-                        .font(.caption)
-                        .foregroundColor(.secondaryText)
-                }
-                
-                Spacer()
-                
-                Text(ByteCountFormatter.string(fromByteCount: size, countStyle: .file))
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundColor(.white)
-                
-                Image(systemName: "chevron.right")
-                    .foregroundColor(.secondaryText)
-                    .font(.system(size: 12))
-            }
-            .padding(12)
-            .background(isSelected ? Color.white.opacity(0.15) : Color.white.opacity(0.05))
-            .cornerRadius(10)
-        }
-        .buttonStyle(.plain)
-    }
-}
-
-// MARK: - 系统垃圾分类行
-struct SystemJunkCategoryRow: View {
-    let icon: String
-    let title: String
-    let size: Int64
-    let isSelected: Bool
-    let color: Color
-    
-    var body: some View {
-        HStack(spacing: 12) {
-            Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
-                .foregroundColor(isSelected ? .blue : .gray)
-                .font(.system(size: 20))
-            
-            ZStack {
-                RoundedRectangle(cornerRadius: 8)
-                    .fill(color.opacity(0.2))
-                    .frame(width: 36, height: 36)
-                Image(systemName: icon)
-                    .font(.system(size: 16))
-                    .foregroundColor(color)
-            }
-            
-            Text(title)
-                .font(.system(size: 14, weight: .medium))
-                .foregroundColor(.white)
-            
-            Spacer()
-            
-            Text(ByteCountFormatter.string(fromByteCount: size, countStyle: .file))
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundColor(.white)
-        }
-        .padding(.vertical, 8)
-        .padding(.horizontal, 12)
-        .background(isSelected ? Color.white.opacity(0.1) : Color.clear)
-        .cornerRadius(8)
-    }
-}
-
-// MARK: - 垃圾分类详情行 (保留兼容)
-struct JunkCategoryDetailRow: View {
-    let icon: String
-    let title: String
-    let size: Int64
-    let count: Int
-    let color: Color
-    let isSelected: Bool
-    
-    var body: some View {
-        HStack(spacing: 16) {
-            Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
-                .foregroundColor(isSelected ? .blue : .gray)
-                .font(.system(size: 22))
-            
-            ZStack {
-                RoundedRectangle(cornerRadius: 10)
-                    .fill(color.opacity(0.15))
-                    .frame(width: 44, height: 44)
-                Image(systemName: icon)
-                    .font(.system(size: 20))
-                    .foregroundColor(color)
-            }
-            
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title)
-                    .font(.system(size: 14, weight: .medium))
-                    .foregroundColor(.white)
-                if count > 0 {
-                    Text("\(count) 个文件")
-                        .font(.caption)
-                        .foregroundColor(.secondaryText)
+                        .lineLimit(2)
+                    
+                    Spacer()
+                    
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 12)
+                            .fill(gradient.opacity(0.5))
+                            .frame(width: 45, height: 45)
+                            .rotationEffect(.degrees(45))
+                        
+                        Image(systemName: icon)
+                            .font(.system(size: 18))
+                            .foregroundColor(.white.opacity(0.8))
+                    }
                 }
             }
-            
-            Spacer()
-            
-            HStack(spacing: 8) {
-                Image(systemName: "chevron.right")
-                    .foregroundColor(.secondaryText)
-                    .font(.system(size: 12))
-                Text(ByteCountFormatter.string(fromByteCount: size, countStyle: .file))
-                    .font(.system(size: 14, weight: .bold))
-                    .foregroundColor(.white)
-                    .frame(width: 80, alignment: .trailing)
-            }
+            .padding(14)
         }
-        .padding(.vertical, 12)
-        .padding(.horizontal, 16)
-        .background(Color.white.opacity(0.05))
-        .cornerRadius(12)
+        .frame(height: 180)
+        .cornerRadius(20)
+        .overlay(
+            RoundedRectangle(cornerRadius: 20)
+                .stroke(Color.white.opacity(0.1), lineWidth: 1)
+        )
     }
 }
 
-// MARK: - Result Card (保留兼容)
-struct ResultCard: View {
-    let icon: String
-    let title: String
-    let count: Int
-    let size: Int64
-    let color: Color
+// 扫过光效动画
+struct WipingAnimation: ViewModifier {
+    @State private var offset: CGFloat = -300
     
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Image(systemName: icon)
-                    .font(.system(size: 20))
-                    .foregroundColor(color)
-                    .padding(8)
-                    .background(color.opacity(0.1))
-                    .clipShape(Circle())
-                Spacer()
-                if count > 0 {
-                    Text("\(count)")
-                        .font(.caption)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(Color.white.opacity(0.1))
-                        .cornerRadius(4)
+    func body(content: Content) -> some View {
+        content
+            .offset(y: offset)
+            .onAppear {
+                withAnimation(Animation.linear(duration: 3.0).repeatForever(autoreverses: false)) {
+                    offset = 400
                 }
             }
-            Spacer()
-            Text(title)
-                .font(.system(size: 13, weight: .medium))
-                .foregroundColor(.secondaryText)
-            Text(ByteCountFormatter.string(fromByteCount: size, countStyle: .file))
-                .font(.system(size: 16, weight: .bold))
-                .foregroundColor(.white)
-        }
-        .padding(16)
-        .frame(maxWidth: .infinity, maxHeight: 120)
-        .background(Color.white.opacity(0.05))
-        .cornerRadius(12)
-        .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.white.opacity(0.05), lineWidth: 1))
-    }
-}
-
-// MARK: - 保留的组件
-struct CategoryTabButton: View {
-    let category: CleanerCategory
-    let isSelected: Bool
-    let count: Int
-    @ObservedObject var loc: LocalizationManager
-    let action: () -> Void
-    
-    var body: some View {
-        Button(action: action) {
-            HStack(spacing: 8) {
-                Image(systemName: category.icon)
-                    .font(.system(size: 14))
-                Text(loc.currentLanguage == .chinese ? category.rawValue : category.englishName)
-                    .font(.system(size: 13, weight: .medium))
-                if count > 0 {
-                    Text("\(count)")
-                        .font(.caption2)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(Color.white.opacity(0.2))
-                        .cornerRadius(8)
-                }
-            }
-            .foregroundColor(isSelected ? .white : .white.opacity(0.6))
-            .padding(.horizontal, 16)
-            .padding(.vertical, 10)
-            .background(isSelected ? Color.white.opacity(0.15) : Color.clear)
-            .cornerRadius(8)
-        }
-        .buttonStyle(.plain)
-    }
-}
-
-struct FileRow: View {
-    let file: CleanerFileItem
-    let isSelected: Bool
-    let onToggle: () -> Void
-    
-    var body: some View {
-        HStack(spacing: 12) {
-            Button(action: onToggle) {
-                Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
-                    .foregroundColor(isSelected ? .blue : .white.opacity(0.3))
-                    .font(.system(size: 20))
-            }
-            .buttonStyle(.plain)
-            
-            Image(nsImage: file.icon)
-                .resizable()
-                .frame(width: 32, height: 32)
-            
-            VStack(alignment: .leading, spacing: 2) {
-                Text(file.name)
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundColor(.white)
-                    .lineLimit(1)
-                Text(file.url.deletingLastPathComponent().path)
-                    .font(.system(size: 11))
-                    .foregroundColor(.tertiaryText)
-                    .lineLimit(1)
-            }
-            
-            Spacer()
-            
-            Text(file.formattedSize)
-                .font(.system(size: 12))
-                .foregroundColor(.secondaryText)
-        }
-        .padding(10)
-        .background(Color.white.opacity(0.05))
-        .cornerRadius(8)
-    }
-}
-
-struct PhotoRow: View {
-    let file: CleanerFileItem
-    let isSelected: Bool
-    let onToggle: () -> Void
-    
-    var body: some View {
-        HStack(spacing: 12) {
-            Button(action: onToggle) {
-                Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
-                    .foregroundColor(isSelected ? .blue : .white.opacity(0.3))
-                    .font(.system(size: 20))
-            }
-            .buttonStyle(.plain)
-            
-            if let nsImage = NSImage(contentsOf: file.url) {
-                Image(nsImage: nsImage)
-                    .resizable()
-                    .aspectRatio(contentMode: .fill)
-                    .frame(width: 48, height: 48)
-                    .cornerRadius(6)
-                    .clipped()
-            } else {
-                Image(systemName: "photo")
-                    .frame(width: 48, height: 48)
-                    .background(Color.white.opacity(0.1))
-                    .cornerRadius(6)
-            }
-            
-            VStack(alignment: .leading, spacing: 2) {
-                Text(file.name)
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundColor(.white)
-                    .lineLimit(1)
-                Text(file.url.deletingLastPathComponent().path)
-                    .font(.system(size: 11))
-                    .foregroundColor(.tertiaryText)
-                    .lineLimit(1)
-            }
-            
-            Spacer()
-            
-            Text(file.formattedSize)
-                .font(.system(size: 12))
-                .foregroundColor(.secondaryText)
-        }
-        .padding(10)
-        .background(Color.white.opacity(0.05))
-        .cornerRadius(8)
     }
 }

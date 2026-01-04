@@ -39,8 +39,6 @@ echo -e "${GREEN}✓ 源文件检查通过${NC}"
 # 3. 准备构建目录
 echo -e "${YELLOW}[2/7] 准备构建目录...${NC}"
 rm -rf "${BUILD_DIR}"
-mkdir -p "${BUILD_DIR}/arm64"
-mkdir -p "${BUILD_DIR}/x86_64"
 mkdir -p "${BUILD_DIR}/${BUNDLE_NAME}/Contents/MacOS"
 mkdir -p "${BUILD_DIR}/${BUNDLE_NAME}/Contents/Resources"
 echo -e "${GREEN}✓ 目录准备完成${NC}"
@@ -55,35 +53,16 @@ else
     echo -e "${YELLOW}⚠ 警告: 未找到图标文件${NC}"
 fi
 
-# 5. 编译 Universal Binary
-echo -e "${YELLOW}[4/7] 正在编译 (Universal Binary)...${NC}"
+# 5. 编译 (Apple Silicon)
+echo -e "${YELLOW}[4/7] 正在编译 (Apple Silicon)...${NC}"
 
-# 5.1 编译 arm64 (Apple Silicon)
 echo -n "  - 编译 arm64... "
 swiftc -O \
     -target arm64-apple-macos13.0 \
     -sdk $(xcrun --sdk macosx --show-sdk-path) \
     -parse-as-library \
-    -o "${BUILD_DIR}/arm64/${EXECUTABLE_NAME}" \
+    -o "${BUILD_DIR}/${BUNDLE_NAME}/Contents/MacOS/${EXECUTABLE_NAME}" \
     "${SWIFT_FILES[@]}"
-echo -e "${GREEN}OK${NC}"
-
-# 5.2 编译 x86_64 (Intel)
-echo -n "  - 编译 x86_64... "
-swiftc -O \
-    -target x86_64-apple-macos13.0 \
-    -sdk $(xcrun --sdk macosx --show-sdk-path) \
-    -parse-as-library \
-    -o "${BUILD_DIR}/x86_64/${EXECUTABLE_NAME}" \
-    "${SWIFT_FILES[@]}"
-echo -e "${GREEN}OK${NC}"
-
-# 5.3 Lipo 合并
-echo -n "  - 合并二进制文件... "
-lipo -create \
-    "${BUILD_DIR}/arm64/${EXECUTABLE_NAME}" \
-    "${BUILD_DIR}/x86_64/${EXECUTABLE_NAME}" \
-    -output "${BUILD_DIR}/${BUNDLE_NAME}/Contents/MacOS/${EXECUTABLE_NAME}"
 echo -e "${GREEN}OK${NC}"
 
 # 6. 签名
@@ -105,10 +84,6 @@ hdiutil create \
     "${DMG_PATH}" > /dev/null
 
 echo -e "${GREEN}✓ DMG 打包完成${NC}"
-
-# 清理中间文件 (可选)
-rm -rf "${BUILD_DIR}/arm64"
-rm -rf "${BUILD_DIR}/x86_64"
 
 echo ""
 echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"

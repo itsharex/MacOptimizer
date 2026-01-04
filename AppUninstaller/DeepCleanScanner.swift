@@ -11,9 +11,21 @@ struct DeepCleanItem: Identifiable, Sendable {
     let category: DeepCleanCategory
     var isSelected: Bool = true
     
+    // New metadata for Apps
+    var appIcon: NSImage? = nil
+    var bundleId: String? = nil
+    
     var formattedSize: String {
         ByteCountFormatter.string(fromByteCount: size, countStyle: .file)
     }
+}
+
+// MARK: - App Info Helper Structure
+struct InstalledAppInfo {
+    let name: String
+    let bundleId: String
+    let url: URL
+    let icon: NSImage
 }
 
 enum DeepCleanCategory: String, CaseIterable, Sendable {
@@ -94,88 +106,70 @@ class DeepCleanScanner: ObservableObject {
     
     // MARK: - API
     
+    @Published var currentCategory: DeepCleanCategory = .largeFiles // Default, updates during scan
+    
+    // MARK: - API
+    
     func startScan() async {
         await MainActor.run {
             self.reset()
             self.isScanning = true
             self.scanStatus = LocalizationManager.shared.currentLanguage == .chinese ? "准备扫描..." : "Preparing..."
-            self.scanProgress = 0.05 // Initial small progress
+            self.scanProgress = 0.0
         }
         
-        // 并发扫描所有类别
-        await withTaskGroup(of: (DeepCleanCategory, [DeepCleanItem]).self) { group in
-            
-            // 1. 扫描大文件 (User Home + Applications)
-            group.addTask {
-                await self.updateStatus(LocalizationManager.shared.currentLanguage == .chinese ? "正在扫描大文件..." : "Scanning Large Files...", category: .largeFiles)
-                let items = await self.scanLargeFiles()
-                return (.largeFiles, items)
+        let categoriesToScan: [DeepCleanCategory] = [.junkFiles, .systemLogs, .systemCaches, .appResiduals, .largeFiles]
+        let totalCategories = Double(categoriesToScan.count)
+        
+        for (index, category) in categoriesToScan.enumerated() {
+            // Update Current Category
+            await MainActor.run {
+                self.currentCategory = category
+                self.scanStatus = self.statusText(for: category)
             }
             
-            // 2. 扫描日志 (Logs)
-            group.addTask {
-                await self.updateStatus(LocalizationManager.shared.currentLanguage == .chinese ? "正在扫描日志..." : "Scanning Logs...", category: .systemLogs)
-                let items = await self.scanLogs()
-                return (.systemLogs, items)
+            // Perform Scan
+            let newItems: [DeepCleanItem]
+            switch category {
+            case .largeFiles: newItems = await scanLargeFiles()
+            case .junkFiles: newItems = await scanJunk()
+            case .systemLogs: newItems = await scanLogs()
+            case .systemCaches: newItems = await scanCaches()
+            case .appResiduals: newItems = await scanResiduals()
             }
             
-            // 3. 扫描缓存 (Caches)
-            group.addTask {
-                await self.updateStatus(LocalizationManager.shared.currentLanguage == .chinese ? "正在扫描缓存..." : "Scanning Caches...", category: .systemCaches)
-                let items = await self.scanCaches()
-                return (.systemCaches, items)
-            }
-            
-            // 4. 扫描应用残留 (Containers/Support)
-            group.addTask {
-                await self.updateStatus(LocalizationManager.shared.currentLanguage == .chinese ? "正在扫描应用残留..." : "Scanning Leftovers...", category: .appResiduals)
-                let items = await self.scanResiduals()
-                return (.appResiduals, items)
-            }
-            
-            // 5. 扫描系统垃圾 (Junk, Trash, Downloads, etc)
-            group.addTask {
-                await self.updateStatus(LocalizationManager.shared.currentLanguage == .chinese ? "正在扫描系统垃圾..." : "Scanning Junk...", category: .junkFiles)
-                let items = await self.scanJunk()
-                return (.junkFiles, items)
-            }
-            
-            // 收集结果 (Incremental Updates)
-            var completedTasks = 0
-            let totalTasks = 5.0
-            
-            for await (category, result) in group {
-                completedTasks += 1
+            // Update Results
+             await MainActor.run {
+                self.items.append(contentsOf: newItems)
+                self.totalSize += newItems.reduce(0) { $0 + $1.size }
+                self.completedCategories.insert(category)
+                self.items.sort { $0.size > $1.size } // Keep sorted
                 
-                await MainActor.run { [completedTasks] in
-                    // Mark category as complete
-                    self.completedCategories.insert(category)
-                    
-                    // Update items immediately
-                    self.items.append(contentsOf: result)
-                    
-                    // Update total size immediately
-                    let newSize = result.reduce(0) { $0 + $1.size }
-                    self.totalSize += newSize
-                    
-                    // Update progress
-                    withAnimation(.linear(duration: 0.5)) {
-                        self.scanProgress = Double(completedTasks) / totalTasks
-                    }
-                    
-                    // Sort items immediately so UI looks correct
-                    self.items.sort { $0.size > $1.size }
-                    
-                    // Clear scanning URL
-                    self.currentScanningUrl = "" 
+                // Animate Progress
+                withAnimation(.linear(duration: 0.3)) {
+                    self.scanProgress = Double(index + 1) / totalCategories
                 }
             }
             
-            await MainActor.run {
-                self.isScanning = false
-                self.scanStatus = LocalizationManager.shared.currentLanguage == .chinese ? "扫描完成" : "Scan Complete"
-                self.scanProgress = 1.0
-            }
+            // Small delay for visual pacing (optional, feels more "pro")
+            try? await Task.sleep(nanoseconds: 300_000_000) // 0.3s
+        }
+        
+        await MainActor.run {
+            self.isScanning = false
+            self.scanStatus = LocalizationManager.shared.currentLanguage == .chinese ? "扫描完成" : "Scan Complete"
+            self.scanProgress = 1.0
+        }
+    }
+    
+    private func statusText(for category: DeepCleanCategory) -> String {
+        let isChinese = LocalizationManager.shared.currentLanguage == .chinese
+        switch category {
+        case .largeFiles: return isChinese ? "正在扫描大文件..." : "Scanning Large Files..."
+        case .junkFiles: return isChinese ? "正在扫描系统垃圾..." : "Scanning System Junk..."
+        case .systemLogs: return isChinese ? "正在扫描日志..." : "Scanning Logs..."
+        case .systemCaches: return isChinese ? "正在扫描缓存..." : "Scanning Caches..."
+        case .appResiduals: return isChinese ? "正在扫描应用残留..." : "Scanning App Residue..."
         }
     }
     
@@ -200,43 +194,63 @@ class DeepCleanScanner: ObservableObject {
     func cleanSelected() async -> (count: Int, size: Int64) {
         await MainActor.run {
             self.isCleaning = true
-            self.scanStatus = LocalizationManager.shared.currentLanguage == .chinese ? "正在清理..." : "Cleaning..."
+            self.scanStatus = LocalizationManager.shared.currentLanguage == .chinese ? "准备清理..." : "Preparing Cleanup..."
             self.cleaningProgress = 0
         }
         
-        let selectedItems = items.filter { $0.isSelected }
-        var deletedCount = 0
-        var deletedSize: Int64 = 0
-        var failures: [URL] = []
-        let totalItems = selectedItems.count
+        let categoriesToClean: [DeepCleanCategory] = [.junkFiles, .systemLogs, .systemCaches, .appResiduals, .largeFiles]
+        var totalDeletedCount = 0
+        var totalDeletedSize: Int64 = 0
+        var allFailures: [URL] = []
         
-        for (index, item) in selectedItems.enumerated() {
-            // Update progress for each item
-            await MainActor.run {
-                self.currentCleaningItem = item.name
-                self.scanStatus = LocalizationManager.shared.currentLanguage == .chinese ?
-                    "正在清理: \(item.name)" : "Cleaning: \(item.name)"
-                self.cleaningProgress = Double(index) / Double(totalItems)
+        let categoriesWithSelection = categoriesToClean.filter { cat in
+            items.contains { $0.category == cat && $0.isSelected }
+        }
+        let totalCategories = Double(categoriesWithSelection.count)
+        
+        for (index, category) in categoriesWithSelection.enumerated() {
+             await MainActor.run {
+                self.currentCategory = category
+                self.scanStatus = LocalizationManager.shared.currentLanguage == .chinese ? 
+                    "正在清理 \(category.localizedName)..." : "Cleaning \(category.localizedName)..."
             }
             
-            do {
-                // Use trashItem for safety (moves to Trash instead of permanent delete)
-                try fileManager.trashItem(at: item.url, resultingItemURL: nil)
-                deletedCount += 1
-                deletedSize += item.size
-            } catch {
-                print("Delete failed for \(item.url): \(error.localizedDescription)")
-                failures.append(item.url)
+            let categoryItems = items.filter { $0.category == category && $0.isSelected }
+            var categoryFailures: [URL] = []
+            
+            for item in categoryItems {
+                do {
+                    try fileManager.trashItem(at: item.url, resultingItemURL: nil)
+                    totalDeletedCount += 1
+                    totalDeletedSize += item.size
+                } catch {
+                    print("Delete failed for \(item.url): \(error.localizedDescription)")
+                    categoryFailures.append(item.url)
+                    allFailures.append(item.url)
+                }
             }
+            
+            // Update items for this category immediately
+            let capturedFailures = categoryFailures
+            await MainActor.run {
+                self.items.removeAll { item in
+                    categoryItems.contains(where: { $0.id == item.id }) && !capturedFailures.contains(item.url)
+                }
+                
+                // Animate Progress
+                withAnimation(.linear(duration: 0.3)) {
+                    self.cleaningProgress = Double(index + 1) / totalCategories
+                }
+            }
+            
+            // Small delay for visual pacing
+            try? await Task.sleep(nanoseconds: 300_000_000) // 0.3s
         }
         
-        let finalDeletedSize = deletedSize
-        let finalDeletedCount = deletedCount
+        let finalDeletedSize = totalDeletedSize
+        let finalDeletedCount = totalDeletedCount
         
-        await MainActor.run { [finalDeletedSize, failures] in
-            self.items.removeAll { item in
-                selectedItems.contains(where: { $0.id == item.id }) && !failures.contains(item.url)
-            }
+        await MainActor.run { [finalDeletedSize] in
             self.cleanedSize = finalDeletedSize
             self.totalSize -= finalDeletedSize
             self.isCleaning = false
@@ -269,28 +283,32 @@ class DeepCleanScanner: ObservableObject {
     // MARK: - Scanning Implementations
     
     private func scanLargeFiles() async -> [DeepCleanItem] {
-        // SAFETY: Only scan user's home directory, NEVER /Applications
+        // Scan User's Home Directory (~/) recursively
         let home = fileManager.homeDirectoryForCurrentUser
-        let scanRoots = [
-            home.appendingPathComponent("Downloads"),
-            home.appendingPathComponent("Desktop"),
-            home.appendingPathComponent("Documents"),
-            home.appendingPathComponent("Movies"),
-            home.appendingPathComponent("Music")
-        ]
+        let scanRoots = [home]
         
-        // SAFETY: Exclude Library entirely to protect app data
+        // Exclude specific system/sensitive/app directories to prevent damage
         let config = ScanConfiguration(
             minFileSize: 50 * 1024 * 1024, // 50MB
             skipHiddenFiles: true,
-            excludedPaths: ["Library", ".Trash", "Applications", ".app"] // NEVER touch apps
+            excludedPaths: [
+                "Library",          // Contains App Data/Databases - Unsafe to delete single files
+                "Applications",     // Apps themselves
+                ".Trash",           // Already in Trash
+                "Desktop",          // Optional: Some users keep important stuff on Desktop, but we'll scan it. Wait, if I include it in Roots, I scan it. If I exclude it here, I skip it. 
+                                    // I want to scan EVERYTHING in Home except Library/Apps.
+                                    // So I should NOT exclude Desktop/Documents.
+                ".vol", ".Db",      // System mounts
+                "Music/Music Library", // Protect Music Library DB
+                "Pictures/Photos Library.photoslibrary" // Protect Photos DB
+            ]
         )
         
         let results = await scanDirectoryConcurrently(directories: scanRoots, configuration: config) { url, values -> DeepCleanItem? in
             // SAFETY: Skip .app bundles and application-related files
             if url.path.contains(".app") || 
                url.path.contains("/Applications/") ||
-               url.path.contains("/Library/") {
+               url.path.contains("/Library/") { // Double check for Library in path
                 return nil
             }
             
@@ -306,24 +324,33 @@ class DeepCleanScanner: ObservableObject {
     }
     
     private func scanLogs() async -> [DeepCleanItem] {
-        var logDirs = [URL]()
+        var logPaths = [String]()
         
-        // User Logs - 安全
-        let userLogs = fileManager.homeDirectoryForCurrentUser.appendingPathComponent("Library/Logs")
-        logDirs.append(userLogs)
+        // 1. Standard Log Paths
+        logPaths.append(contentsOf: [
+            "~/Library/Logs",
+            "~/Library/Application Support/CrashReporter",
+            "~/Library/Logs/DiagnosticReports"
+        ])
         
-        // 注意: 已移除系统日志路径 /Library/Logs 和 /private/var/log - 可能影响系统稳定性
+        // 2. Expand tilde
+        let expandedPaths = logPaths.map { NSString(string: $0).expandingTildeInPath }
         
         let config = ScanConfiguration(
             minFileSize: 0,
             skipHiddenFiles: false
         )
         
-        return await scanDirectoryConcurrently(directories: logDirs, configuration: config) { url, values in
-            // UI Update
+        return await scanDirectoryConcurrently(directories: expandedPaths.map { URL(fileURLWithPath: $0) }, configuration: config) { url, values in
             self.updateScanningUrl(url.path)
             
-            if url.pathExtension == "log" || url.path.contains("/Logs/") {
+            // Filter logic
+            let isLog = url.pathExtension == "log" || 
+                       url.pathExtension == "crash" ||
+                       url.path.contains("/Logs/") || 
+                       url.path.contains("/CrashReporter/")
+            
+            if isLog {
                 return DeepCleanItem(
                     url: url,
                     name: url.lastPathComponent,
@@ -335,51 +362,122 @@ class DeepCleanScanner: ObservableObject {
         }
     }
     
-    private func scanCaches() async -> [DeepCleanItem] {
-        var cacheDirs = [URL]()
+    // MARK: - Dynamic App Scanning Helpers
+    
+    private func getInstalledApps() -> [InstalledAppInfo] {
+        var apps: [InstalledAppInfo] = []
+        let appDirs = [
+            "/Applications",
+            "/System/Applications",
+            fileManager.homeDirectoryForCurrentUser.appendingPathComponent("Applications").path
+        ]
         
-        // User Caches - 安全
-        let userCaches = fileManager.homeDirectoryForCurrentUser.appendingPathComponent("Library/Caches")
-        cacheDirs.append(userCaches)
-        
-        // 注意: 已移除 /Library/Caches - 系统缓存应由系统自行管理
-        
-        // 这里我们只扫描顶级文件夹或大文件，避免列出数百万个小缓存文件
-        // 策略：列出 Caches 下的一级子文件夹，计算其大小，作为一个 Item
-        var items: [DeepCleanItem] = []
-        
-        for dir in cacheDirs {
-            guard let contents = try? fileManager.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]) else { continue }
-            
-            await withTaskGroup(of: DeepCleanItem?.self) { group in
-                for url in contents {
-                    group.addTask {
-                        // UI Update
-                        await MainActor.run {
-                            self.updateScanningUrl(url.path)
-                        }
-                        
-                        let size = await calculateSizeAsync(at: url)
-                        if size > 1024 * 1024 { // > 1MB
-                            return DeepCleanItem(
-                                url: url,
-                                name: url.lastPathComponent,
-                                size: size,
-                                category: .systemCaches
-                            )
-                        }
-                        return nil
-                    }
-                }
-                
-                for await item in group {
-                    if let item = item {
-                        items.append(item)
+        for dir in appDirs {
+            guard let contents = try? fileManager.contentsOfDirectory(atPath: dir) else { continue }
+            for item in contents {
+                if item.hasSuffix(".app") {
+                    let appUrl = URL(fileURLWithPath: dir).appendingPathComponent(item)
+                    // Get Bundle ID
+                    if let bundle = Bundle(url: appUrl),
+                       let bundleId = bundle.bundleIdentifier {
+                        let icon = NSWorkspace.shared.icon(forFile: appUrl.path)
+                        let name = (item as NSString).deletingPathExtension
+                        apps.append(InstalledAppInfo(name: name, bundleId: bundleId, url: appUrl, icon: icon))
                     }
                 }
             }
         }
+        return apps
+    }
+    
+    private func scanCaches() async -> [DeepCleanItem] {
+        var items: [DeepCleanItem] = []
         
+        // 1. Dynamic App Scanning
+        let apps = getInstalledApps()
+        let home = fileManager.homeDirectoryForCurrentUser
+        
+        // Optimization: Use concurrent scanning for apps
+        await withTaskGroup(of: DeepCleanItem?.self) { group in
+            for app in apps {
+                group.addTask {
+                    // Predict Cache Path: ~/Library/Caches/[BundleID]
+                    let cacheUrl = home.appendingPathComponent("Library/Caches").appendingPathComponent(app.bundleId)
+                    
+                    if self.fileManager.fileExists(atPath: cacheUrl.path) {
+                        // Update UI occasionally
+                        if Int.random(in: 0...50) == 0 { await MainActor.run { self.updateScanningUrl(cacheUrl.path) } }
+                        
+                        let size = await calculateSizeAsync(at: cacheUrl)
+                        if size > 1024 * 1024 { // > 1MB
+                             return DeepCleanItem(
+                                url: cacheUrl,
+                                name: app.name + " " + (LocalizationManager.shared.currentLanguage == .chinese ? "缓存" : "Cache"),
+                                size: size,
+                                category: .systemCaches,
+                                appIcon: app.icon,
+                                bundleId: app.bundleId
+                            )
+                        }
+                    }
+                    return nil
+                }
+            }
+            
+            for await item in group {
+                if let item = item { items.append(item) }
+            }
+        }
+        
+        // 2. Scan Log Paths (using predicted Bundle IDs)
+         // (This could be integrated here or in scanLogs, but let's stick to Caches for now as requested)
+         
+        // 3. Scan Generic Caches (browsers etc. matching specifically if not found by bundle ID)
+        // Note: Chrome/Safari/etc usually have specific bundle IDs so getInstalledApps should catch them.
+        // We can keep the manual list as a fallback or removal it?
+        // Let's keep a small manual list for non-standard apps that might not be in /Applications or have weird cache paths (like Chrome's "Default/Cache")
+        
+        // Browsers specific paths not covered by Bundle ID Caches standard
+        let manualItems = await scanManualCaches()
+        items.append(contentsOf: manualItems)
+        
+        // Deduplicate
+        return Array(Set(items.map { $0.url })).compactMap { url in
+            items.first(where: { $0.url == url })
+        }
+    }
+    
+    private func scanManualCaches() async -> [DeepCleanItem] {
+         var cachePaths = Set<String>()
+        
+        // Specific complex paths not just ~/Library/Caches/BundleID
+        cachePaths.insert("~/Library/Caches/Google/Chrome") // Sometimes this is a container
+        cachePaths.insert("~/Library/Application Support/Google/Chrome/Default/Cache")
+        cachePaths.insert("~/Library/Caches/com.apple.Safari") // Safari uses standard ID but complex structure sometimes
+        cachePaths.insert("~/Library/Caches/Firefox")
+        
+         // 3. Expand all paths
+        let validPaths = cachePaths
+            .map { NSString(string: $0).expandingTildeInPath }
+            .map { URL(fileURLWithPath: $0) }
+            .filter { fileManager.fileExists(atPath: $0.path) }
+            
+        var items: [DeepCleanItem] = []
+        for dir in validPaths {
+             let size = await calculateSizeAsync(at: dir)
+             if size > 1024 {
+                var displayName = dir.lastPathComponent
+                if dir.path.contains("Chrome") { displayName = "Chrome Cache" }
+                else if dir.path.contains("Firefox") { displayName = "Firefox Cache" }
+                
+                 items.append(DeepCleanItem(
+                    url: dir,
+                    name: displayName,
+                    size: size,
+                    category: .systemCaches
+                ))
+             }
+        }
         return items
     }
     
@@ -398,7 +496,7 @@ class DeepCleanScanner: ObservableObject {
         
         var items: [DeepCleanItem] = []
         
-        // Scan Trash
+        // 1. Scan Trash
         updateScanningUrl(trash.path)
         let trashSize = await calculateSizeAsync(at: trash)
         if trashSize > 0 {
@@ -410,7 +508,7 @@ class DeepCleanScanner: ObservableObject {
             ))
         }
         
-        // Xcode DerivedData
+        // 2. Xcode DerivedData
         let developer = home.appendingPathComponent("Library/Developer/Xcode/DerivedData")
         if fileManager.fileExists(atPath: developer.path) {
             updateScanningUrl(developer.path)
@@ -423,6 +521,58 @@ class DeepCleanScanner: ObservableObject {
                     category: .junkFiles
                 ))
             }
+        }
+        
+        // 3. iOS Device Backups
+        let iosBackups = home.appendingPathComponent("Library/Application Support/MobileSync/Backup")
+        if fileManager.fileExists(atPath: iosBackups.path) {
+            updateScanningUrl(iosBackups.path)
+            let size = await calculateSizeAsync(at: iosBackups)
+            if size > 0 {
+                items.append(DeepCleanItem(
+                    url: iosBackups,
+                    name: LocalizationManager.shared.currentLanguage == .chinese ? "iOS 设备备份" : "iOS Backups",
+                    size: size,
+                    category: .junkFiles
+                ))
+            }
+        }
+        
+        // 4. Mail Downloads
+        let mailDownloads = home.appendingPathComponent("Library/Containers/com.apple.mail/Data/Library/Mail Downloads")
+        if fileManager.fileExists(atPath: mailDownloads.path) {
+            updateScanningUrl(mailDownloads.path)
+            let size = await calculateSizeAsync(at: mailDownloads)
+            if size > 0 {
+                items.append(DeepCleanItem(
+                    url: mailDownloads,
+                    name: LocalizationManager.shared.currentLanguage == .chinese ? "邮件附件" : "Mail Attachments",
+                    size: size,
+                    category: .junkFiles
+                ))
+            }
+        }
+        
+        // 5. Temporary Downloads (dmg, pkg, zip)
+        let downloads = home.appendingPathComponent("Downloads")
+        if let contents = try? fileManager.contentsOfDirectory(at: downloads, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]) {
+             for file in contents {
+                 // Update UI occasionally
+                 if Int.random(in: 0...10) == 0 { await MainActor.run { self.updateScanningUrl(file.path) } }
+                 
+                 let ext = file.pathExtension.lowercased()
+                 if ["dmg", "pkg", "zip", "iso"].contains(ext) {
+                     let size = (try? file.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
+                     if size > 0 {
+                         items.append(DeepCleanItem(
+                             url: file,
+                             name: file.lastPathComponent,
+                             size: Int64(size),
+                             category: .junkFiles
+                         ))
+                     }
+                 }
+             }
         }
         
         return items

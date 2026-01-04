@@ -4,10 +4,10 @@ import AppKit
 // MARK: - 全局配色方案 (CleanMyMac X 风格)
 extension Color {
     // 背景色
-    static let mainBackground = Color(red: 0.10, green: 0.10, blue: 0.12) // 深空灰背景
-    static let sidebarBackground = Color.black.opacity(0.2) // 透明度侧边栏
-    static let cardBackground = Color.white.opacity(0.08) // 更通透的卡片背景
-    static let cardHover = Color.white.opacity(0.12)
+    static let mainBackground = Color(red: 0.12, green: 0.12, blue: 0.18) // 更深邃的蓝紫背景
+    static let sidebarBackground = Color.black.opacity(0.15)
+    static let cardBackground = Color.white.opacity(0.06) // 极简半透明
+    static let cardHover = Color.white.opacity(0.10)
     
     // 文本颜色
     static let primaryText = Color.white.opacity(0.95)
@@ -35,6 +35,32 @@ extension Color {
     static let danger = Color(red: 1.0, green: 0.3, blue: 0.3)
     static let success = Color(red: 0.2, green: 0.8, blue: 0.5)
     static let warning = Color(red: 1.0, green: 0.8, blue: 0.2)
+    
+    // MARK: - Hex Extension
+    init(hex: String) {
+        let hex = hex.trimmingCharacters(in: CharacterSet.alphanumerics.inverted)
+        var int: UInt64 = 0
+        Scanner(string: hex).scanHexInt64(&int)
+        let a, r, g, b: UInt64
+        switch hex.count {
+        case 3: // RGB (12-bit)
+            (a, r, g, b) = (255, (int >> 8) * 17, (int >> 4 & 0xF) * 17, (int & 0xF) * 17)
+        case 6: // RGB (24-bit)
+            (a, r, g, b) = (255, int >> 16, int >> 8 & 0xFF, int & 0xFF)
+        case 8: // ARGB (32-bit)
+            (a, r, g, b) = (int >> 24, int >> 16 & 0xFF, int >> 8 & 0xFF, int & 0xFF)
+        default:
+            (a, r, g, b) = (1, 1, 1, 0)
+        }
+        
+        self.init(
+            .sRGB,
+            red: Double(r) / 255,
+            green: Double(g) / 255,
+            blue: Double(b) / 255,
+            opacity: Double(a) / 255
+        )
+    }
 }
 
 // MARK: - 渐变样式
@@ -229,11 +255,58 @@ struct BackgroundStyles {
         endPoint: .bottomTrailing
     )
     
-    // 9. 智能清理 (蓝绿色)
+    // 9. 智能清理 (紫靛色渐变 - 匹配设计图)
     static let smartClean = LinearGradient(
         stops: [
-            .init(color: Color(red: 0.0, green: 0.4, blue: 0.5), location: 0.0),
-            .init(color: Color(red: 0.0, green: 0.25, blue: 0.35), location: 1.0)
+            .init(color: Color(red: 0.40, green: 0.32, blue: 0.62), location: 0.0), // 浅紫向上
+            .init(color: Color(red: 0.18, green: 0.16, blue: 0.35), location: 0.7), // 深靛蓝
+            .init(color: Color(red: 0.12, green: 0.12, blue: 0.25), location: 1.0)  // 最深底部
+        ],
+        startPoint: .top,
+        endPoint: .bottom
+    )
+    
+    // 11. 扫描分类渐变 (Card Backgrounds)
+    static let cardCleaning = LinearGradient( // Cleaning - Green/Teal
+        stops: [
+            .init(color: Color(red: 0.0, green: 0.6, blue: 0.4).opacity(0.8), location: 0),
+            .init(color: Color(red: 0.0, green: 0.4, blue: 0.3).opacity(0.8), location: 1)
+        ],
+        startPoint: .topLeading,
+        endPoint: .bottomTrailing
+    )
+    
+    static let cardProtection = LinearGradient( // Protection - Purple/Pink
+        stops: [
+            .init(color: Color(red: 0.6, green: 0.1, blue: 0.6).opacity(0.8), location: 0),
+            .init(color: Color(red: 0.4, green: 0.0, blue: 0.4).opacity(0.8), location: 1)
+        ],
+        startPoint: .topLeading,
+        endPoint: .bottomTrailing
+    )
+    
+    static let cardPerformance = LinearGradient( // Performance - Orange/Red
+        stops: [
+            .init(color: Color(red: 0.8, green: 0.3, blue: 0.1).opacity(0.8), location: 0),
+            .init(color: Color(red: 0.6, green: 0.2, blue: 0.1).opacity(0.8), location: 1)
+        ],
+        startPoint: .topLeading,
+        endPoint: .bottomTrailing
+    )
+    
+    static let cardApps = LinearGradient( // Applications - Blue
+        stops: [
+            .init(color: Color(red: 0.0, green: 0.3, blue: 0.7).opacity(0.8), location: 0),
+            .init(color: Color(red: 0.0, green: 0.2, blue: 0.5).opacity(0.8), location: 1)
+        ],
+        startPoint: .topLeading,
+        endPoint: .bottomTrailing
+    )
+    
+    static let cardClutter = LinearGradient( // Clutter - Cyan/Blue
+        stops: [
+            .init(color: Color(red: 0.0, green: 0.5, blue: 0.6).opacity(0.8), location: 0),
+            .init(color: Color(red: 0.0, green: 0.3, blue: 0.5).opacity(0.8), location: 1)
         ],
         startPoint: .topLeading,
         endPoint: .bottomTrailing
@@ -270,17 +343,17 @@ enum AppModule: String, CaseIterable, Identifiable {
     var icon: String {
         switch self {
         case .monitor: return "chart.bar.xaxis"
-        case .uninstaller: return "square.grid.2x2.fill"
-        case .deepClean: return "wand.and.stars"
-        case .cleaner: return "trash.fill"
-        case .maintenance: return "wrench.and.screwdriver" // Icon for Maintenance
-        case .optimizer: return "bolt.fill" // Icon for Optimization
-        case .shredder: return "doc.text.fill" // Icon for Shredder
-        case .largeFiles: return "magnifyingglass.circle.fill"
-        case .fileExplorer: return "folder.fill"
-        case .trash: return "trash.circle.fill"
+        case .uninstaller: return "puzzlepiece.extension"
+        case .deepClean: return "envelope"
+        case .cleaner: return "globe"
+        case .maintenance: return "wrench.and.screwdriver"
+        case .optimizer: return "bolt.fill"
+        case .shredder: return "doc.text.fill"
+        case .largeFiles: return "doc"
+        case .fileExplorer: return "circle.hexagongrid"
+        case .trash: return "trash"
         case .privacy: return "hand.raised.fill"
-        case .smartClean: return "sparkles.rectangle.stack"
+        case .smartClean: return "display"
         }
     }
     
