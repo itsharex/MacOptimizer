@@ -490,17 +490,18 @@ struct PrivacyView: View {
     
     private func toggleCategorySelection(_ category: SidebarCategory) {
         let items = itemsForCategory(category)
+        
+        // Handle empty category - nothing to toggle
+        guard !items.isEmpty else { return }
+        
+        // Determine new selection state: if all selected, deselect all; otherwise select all
         let allSelected = items.allSatisfy { $0.isSelected }
         let newValue = !allSelected
         
-        for item in items {
-            service.toggleSelection(for: item.id)
-            // Since toggleSelection toggles, we need to set it directly
-        }
-        // Actually, we need to set all to the same value
+        // Directly set the selection state for all matching items
         for i in 0..<service.privacyItems.count {
             let item = service.privacyItems[i]
-            if itemsForCategory(category).contains(where: { $0.id == item.id }) {
+            if items.contains(where: { $0.id == item.id }) {
                 service.privacyItems[i].isSelected = newValue
             }
         }
