@@ -75,6 +75,9 @@ struct ContentView: View {
                         case .privacy:
                             PrivacyView(selectedModule: $selectedModule)
                                 .transition(.opacity.combined(with: .move(edge: .trailing)))
+                        case .malware:
+                            MalwareView(selectedModule: $selectedModule)
+                                .transition(.opacity.combined(with: .move(edge: .trailing)))
                         case .smartClean:
                             SmartCleanerView(selectedModule: $selectedModule)
                                 .transition(.opacity.combined(with: .move(edge: .trailing)))

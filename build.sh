@@ -79,6 +79,17 @@ if [ "$PNG_COUNT" -gt 0 ]; then
     echo -e "${GREEN}✓ 已复制 ${PNG_COUNT} 个 PNG 图片资源${NC}"
 fi
 
+# 复制 JPG 图片资源
+for jpg_file in "${SOURCE_DIR}"/*.jpg; do
+    if [ -f "$jpg_file" ]; then
+        cp "$jpg_file" "${BUILD_DIR}/${BUNDLE_NAME}/Contents/Resources/"
+    fi
+done
+JPG_COUNT=$(ls -1 "${SOURCE_DIR}"/*.jpg 2>/dev/null | wc -l | tr -d ' ')
+if [ "$JPG_COUNT" -gt 0 ]; then
+    echo -e "${GREEN}✓ 已复制 ${JPG_COUNT} 个 JPG 图片资源${NC}"
+fi
+
 # 复制音频资源 (m4a)
 for audio_file in "${SOURCE_DIR}"/*.m4a; do
     if [ -f "$audio_file" ]; then

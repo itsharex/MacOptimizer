@@ -27,7 +27,7 @@ enum SidebarSection: String, CaseIterable {
         case .cleanup:
             return [.cleaner, .deepClean, .trash]
         case .protection:
-            return [.privacy]
+            return [.malware, .privacy]
         case .speed:
             return [.optimizer, .maintenance, .monitor]
         case .apps:
@@ -227,6 +227,7 @@ struct SidebarMenuItem: View {
         case .fileExplorer: return localization.currentLanguage == .chinese ? "空间透镜" : "Space Lens"
         case .trash: return localization.currentLanguage == .chinese ? "废纸篓" : "Trash Bins"
         case .privacy: return localization.currentLanguage == .chinese ? "隐私" : "Privacy"
+        case .malware: return localization.currentLanguage == .chinese ? "移除恶意软件" : "Malware Removal"
         case .smartClean: return localization.currentLanguage == .chinese ? "智能扫描" : "Smart Scan"
         }
     }

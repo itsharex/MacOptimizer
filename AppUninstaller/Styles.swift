@@ -160,6 +160,7 @@ struct GradientStyles {
         case .fileExplorer: return fileExplorer
         case .trash: return trash
         case .privacy: return privacy
+        case .malware: return LinearGradient(colors: [Color(hex: "FF6B6B"), Color(hex: "FF8E53")], startPoint: .topLeading, endPoint: .bottomTrailing)
         case .smartClean: return smartClean
         }
     }
@@ -349,7 +350,9 @@ enum AppModule: String, CaseIterable, Identifiable {
     case largeFiles = "大文件查找"
     case uninstaller = "应用卸载"
     case trash = "废纸篓"
+    case malware = "移除恶意软件"
     case fileExplorer = "文件管理"
+    
     
     
     var id: String { rawValue }
@@ -366,6 +369,7 @@ enum AppModule: String, CaseIterable, Identifiable {
         case .largeFiles: return "doc"
         case .fileExplorer: return "circle.hexagongrid"
         case .trash: return "trash"
+        case .malware: return "exclamationmark.shield.fill" // Fallback if image not used in menu
         case .privacy: return "hand.raised.fill"
         case .smartClean: return "display"
         }
@@ -377,12 +381,13 @@ enum AppModule: String, CaseIterable, Identifiable {
         case .uninstaller: return GradientStyles.uninstaller
         case .deepClean: return GradientStyles.deepClean
         case .cleaner: return GradientStyles.cleaner
-        case .maintenance: return GradientStyles.optimizer // Reuse Orange for maintenance? Or use Purple?
-        case .optimizer: return GradientStyles.optimizer // Use Orange for Optimization
-        case .shredder: return GradientStyles.shredder // Blue for Shredder
+        case .maintenance: return GradientStyles.optimizer
+        case .optimizer: return GradientStyles.optimizer
+        case .shredder: return GradientStyles.shredder
         case .largeFiles: return GradientStyles.largeFiles
         case .fileExplorer: return GradientStyles.fileExplorer
         case .trash: return GradientStyles.trash
+        case .malware: return LinearGradient(colors: [Color(hex: "FF6B6B"), Color(hex: "FF8E53")], startPoint: .topLeading, endPoint: .bottomTrailing)
         case .privacy:
             return LinearGradient(colors: [.red, .orange], startPoint: .topLeading, endPoint: .bottomTrailing)
         case .smartClean: return GradientStyles.smartClean
@@ -395,12 +400,16 @@ enum AppModule: String, CaseIterable, Identifiable {
         case .uninstaller: return BackgroundStyles.uninstaller
         case .deepClean: return BackgroundStyles.deepClean
         case .cleaner: return BackgroundStyles.cleaner
-        case .maintenance: return BackgroundStyles.privacy // Purple for Maintenance
-        case .optimizer: return BackgroundStyles.privacy // Purple for Optimization (match design)
-        case .shredder: return BackgroundStyles.shredder // Blue/Purple for Shredder
+        case .maintenance: return BackgroundStyles.privacy
+        case .optimizer: return BackgroundStyles.privacy
+        case .shredder: return BackgroundStyles.shredder
         case .largeFiles: return BackgroundStyles.largeFiles
         case .fileExplorer: return BackgroundStyles.fileExplorer
         case .trash: return BackgroundStyles.trash
+        case .malware: return LinearGradient(stops: [
+            .init(color: Color(hex: "E05E5E"), location: 0.0), // Reddish
+            .init(color: Color(hex: "3F2E56"), location: 1.0)  // Dark Purple
+        ], startPoint: .topLeading, endPoint: .bottomTrailing)
         case .privacy: return BackgroundStyles.privacy
         case .smartClean: return BackgroundStyles.smartClean
         }
@@ -418,8 +427,8 @@ enum AppModule: String, CaseIterable, Identifiable {
         case .largeFiles: return "发现并清理占用空间的大文件"
         case .fileExplorer: return "浏览和管理磁盘文件"
         case .trash: return "查看并清空废纸篷"
+        case .malware: return "移除恶意软件"
         case .privacy: return "保护您的隐私数据安全"
-
         case .smartClean: return "一键扫描并清理系统垃圾"
         }
     }
