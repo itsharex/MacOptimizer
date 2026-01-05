@@ -536,10 +536,11 @@ struct OptimizerView: View {
     // Existing list logic moved here
     var optimizerListView: some View {
         GeometryReader { geometry in
-            HStack(spacing: 0) {
+            ZStack(alignment: .bottom) {
+                HStack(spacing: 0) {
                 // LEFT PANEL (Task Selection)
                 ZStack {
-                    Color.black.opacity(0.1).ignoresSafeArea()
+                    // Transparent to let shared background show through
                     VStack(alignment: .leading, spacing: 0) {
                          // Back button (Functional)
                         Button(action: { viewState = 0 }) {
@@ -562,6 +563,7 @@ struct OptimizerView: View {
                                     OptimizerTaskRow(
                                         task: task,
                                         isSelected: service.selectedTasks.contains(task),
+                                        isActive: service.selectedTask == task,
                                         isMultiSelect: true,
                                         loc: loc
                                     )
@@ -603,16 +605,7 @@ struct OptimizerView: View {
                             .background(Color.black.opacity(0.2))
                             .cornerRadius(4)
                             
-                            // Assistant Button
-                            HStack(spacing: 3) {
-                                Circle().fill(Color.green).frame(width: 5, height: 5)
-                                Text(loc.currentLanguage == .chinese ? "助手" : "Assistant")
-                            }
-                            .font(.system(size: 10))
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 3)
-                            .background(Color.white.opacity(0.15))
-                            .cornerRadius(10)
+
                         }
                         .padding(.horizontal, 20)
                         .padding(.top, 12)
@@ -689,48 +682,47 @@ struct OptimizerView: View {
                         Spacer()
                         
                         // Execute Button - 执行所有选中的任务
-                        HStack {
-                            Spacer()
-                            Button(action: {
-                                viewState = 2 // 切换到执行视图
-                                Task {
-                                    await service.executeAllSelectedTasks()
-                                }
-                            }) {
-                                ZStack {
-                                    Circle()
-                                        .fill(Color.white.opacity(0.15))
-                                        .frame(width: 60, height: 60)
-                                    
-                                    Circle()
-                                        .strokeBorder(
-                                            LinearGradient(colors: [.white.opacity(0.5), .white.opacity(0.1)], startPoint: .top, endPoint: .bottom),
-                                            lineWidth: 1
-                                        )
-                                        .frame(width: 60, height: 60)
-                                    
-                                    if service.isExecuting {
-                                        ProgressView()
-                                            .progressViewStyle(CircularProgressViewStyle(tint: .white))
-                                    } else {
-                                        Text(loc.currentLanguage == .chinese ? "执行" : "Run")
-                                            .font(.system(size: 12, weight: .medium))
-                                            .foregroundColor(.white)
-                                    }
-                                }
-                                .shadow(color: .black.opacity(0.2), radius: 8, y: 4)
-                            }
-                            .buttonStyle(.plain)
-                            .disabled(service.isExecuting || service.selectedTasks.isEmpty)
-                            .padding(.bottom, 20)
-                            Spacer()
-                        }
+
                     }
                     .frame(width: geometry.size.width * 0.6)
                 }
             }
+            
+            Button(action: {
+                viewState = 2
+                Task {
+                    await service.executeAllSelectedTasks()
+                }
+            }) {
+                ZStack {
+                    Circle()
+                        .fill(Color.white.opacity(0.15))
+                        .frame(width: 60, height: 60)
+                    
+                    Circle()
+                        .strokeBorder(
+                            LinearGradient(colors: [.white.opacity(0.5), .white.opacity(0.1)], startPoint: .top, endPoint: .bottom),
+                            lineWidth: 1
+                        )
+                        .frame(width: 60, height: 60)
+                    
+                    if service.isExecuting {
+                        ProgressView()
+                            .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                    } else {
+                        Text(loc.currentLanguage == .chinese ? "执行" : "Run")
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundColor(.white)
+                    }
+                }
+                .shadow(color: .black.opacity(0.2), radius: 8, y: 4)
+            }
+            .buttonStyle(.plain)
+            .disabled(service.isExecuting || service.selectedTasks.isEmpty)
+            .padding(.bottom, 40)
         }
     }
+}
     
     // MARK: - 执行视图
     var executingView: some View {
@@ -873,6 +865,7 @@ struct OptimizerView: View {
 struct OptimizerTaskRow: View {
     let task: OptimizerTask
     let isSelected: Bool
+    let isActive: Bool
     var isMultiSelect: Bool = false
     @ObservedObject var loc: LocalizationManager
     
@@ -929,8 +922,11 @@ struct OptimizerTaskRow: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
-        .background(isSelected ? Color.white.opacity(0.1) : Color.clear)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(isActive ? Color.black.opacity(0.2) : Color.clear)
         .cornerRadius(6)
+        .contentShape(Rectangle())
     }
 }
 
@@ -1078,39 +1074,50 @@ struct OptimizerLandingView: View {
                 
                 Spacer()
                 
-                // Right: Icon (Purple Circle with Sliders)
+                // Right: Icon (Purple Circle with Sliders -> Image Asset)
                 ZStack {
-                    Circle()
-                        .fill(
-                            LinearGradient(
-                                colors: [Color(red: 0.8, green: 0.4, blue: 0.7), Color(red: 0.5, green: 0.2, blue: 0.7)],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            )
-                        )
-                        .frame(width: 320, height: 320)
-                        
-                        .shadow(radius: 20)
-                    
-                    // Sliders (Visual)
-                    HStack(spacing: 30) {
-                        // Slider 1
-                        VStack(spacing: 0) {
-                            Capsule().fill(Color.white.opacity(0.3)).frame(width: 8, height: 60)
-                            Circle().fill(Color.white).frame(width: 24, height: 24)
-                            Capsule().fill(Color.white.opacity(0.3)).frame(width: 8, height: 100)
-                        }
-                        // Slider 2
-                        VStack(spacing: 0) {
-                            Capsule().fill(Color.white.opacity(0.3)).frame(width: 8, height: 100)
-                            Circle().fill(Color.white).frame(width: 24, height: 24)
-                            Capsule().fill(Color.white.opacity(0.3)).frame(width: 8, height: 60)
-                        }
-                        // Slider 3 (Lower)
-                        VStack(spacing: 0) {
-                            Capsule().fill(Color.white.opacity(0.3)).frame(width: 8, height: 40)
-                            Circle().fill(Color.white).frame(width: 24, height: 24)
-                            Capsule().fill(Color.white.opacity(0.3)).frame(width: 8, height: 120)
+                     if let path = Bundle.main.path(forResource: "youhua", ofType: "png"),
+                       let nsImage = NSImage(contentsOfFile: path) {
+                        Image(nsImage: nsImage)
+                            .resizable()
+                            .aspectRatio(contentMode: .fit)
+                            .frame(width: 320, height: 320)
+                            .shadow(color: Color.black.opacity(0.3), radius: 20, y: 10)
+                    } else {
+                        // Fallback: Purple Circle with Sliders
+                        ZStack {
+                            Circle()
+                                .fill(
+                                    LinearGradient(
+                                        colors: [Color(red: 0.8, green: 0.4, blue: 0.7), Color(red: 0.5, green: 0.2, blue: 0.7)],
+                                        startPoint: .topLeading,
+                                        endPoint: .bottomTrailing
+                                    )
+                                )
+                                .frame(width: 320, height: 320)
+                                .shadow(radius: 20)
+                            
+                            // Sliders (Visual)
+                            HStack(spacing: 30) {
+                                // Slider 1
+                                VStack(spacing: 0) {
+                                    Capsule().fill(Color.white.opacity(0.3)).frame(width: 8, height: 60)
+                                    Circle().fill(Color.white).frame(width: 24, height: 24)
+                                    Capsule().fill(Color.white.opacity(0.3)).frame(width: 8, height: 100)
+                                }
+                                // Slider 2
+                                VStack(spacing: 0) {
+                                    Capsule().fill(Color.white.opacity(0.3)).frame(width: 8, height: 100)
+                                    Circle().fill(Color.white).frame(width: 24, height: 24)
+                                    Capsule().fill(Color.white.opacity(0.3)).frame(width: 8, height: 60)
+                                }
+                                // Slider 3 (Lower)
+                                VStack(spacing: 0) {
+                                    Capsule().fill(Color.white.opacity(0.3)).frame(width: 8, height: 40)
+                                    Circle().fill(Color.white).frame(width: 24, height: 24)
+                                    Capsule().fill(Color.white.opacity(0.3)).frame(width: 8, height: 120)
+                                }
+                            }
                         }
                     }
                 }

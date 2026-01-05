@@ -108,19 +108,7 @@ struct PrivacyView: View {
         HStack {
             Spacer()
             // 可以在右上角添加"助手"按钮等，参考设计图
-            Button(action: {}) {
-                HStack(spacing: 4) {
-                    Circle().fill(Color.green).frame(width: 8, height: 8)
-                    Text(loc.currentLanguage == .chinese ? "助手" : "Assistant")
-                        .font(.caption)
-                        .foregroundColor(.white)
-                }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 6)
-                .background(Color.black.opacity(0.3))
-                .cornerRadius(12)
-            }
-            .buttonStyle(.plain)
+
         }
         .padding()
     }
@@ -357,19 +345,7 @@ struct PrivacyView: View {
             .background(Color.white.opacity(0.1))
             .cornerRadius(6)
             
-            // 助手按钮
-            Button(action: {}) {
-                HStack(spacing: 4) {
-                    Circle().fill(Color.blue).frame(width: 8, height: 8)
-                    Text(loc.currentLanguage == .chinese ? "助手" : "Assistant")
-                }
-                .padding(.horizontal, 10)
-                .padding(.vertical, 6)
-                .background(Color.black.opacity(0.3))
-                .cornerRadius(12)
-            }
-            .buttonStyle(.plain)
-            .foregroundColor(.white)
+
         }
         .padding()
     }
@@ -397,9 +373,7 @@ struct PrivacyView: View {
         HStack(spacing: 0) {
             categoryListView
                 .frame(width: 250)
-            categoryListView
-                .frame(width: 250)
-                .background(Color.black.opacity(0.15)) // Match Sidebar transparency
+
             
             detailListView
                 .background(Color.white.opacity(0.05))

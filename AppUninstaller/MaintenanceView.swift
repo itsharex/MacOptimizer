@@ -589,7 +589,8 @@ struct MaintenanceView: View {
     // MARK: - Selection View
     var selectionView: some View {
         GeometryReader { geometry in
-            HStack(spacing: 0) {
+            ZStack(alignment: .bottom) {
+                HStack(spacing: 0) {
                 // Left Panel (Task List)
                 VStack(alignment: .leading, spacing: 0) {
                     // Header: Intro Button
@@ -618,16 +619,10 @@ struct MaintenanceView: View {
                         .padding(.horizontal, 8)
                     }
                     
-                    // 运行按钮移到左侧底部
-                    HStack {
-                        Spacer()
-                        runButton
-                        Spacer()
-                    }
-                    .padding(.vertical, 16)
+
                 }
                 .frame(width: geometry.size.width * 0.4)
-                .background(Color.black.opacity(0.1))
+                .background(Color.clear)
                 
                 // Right Panel (Details)
                 VStack(alignment: .leading, spacing: 0) {
@@ -703,6 +698,11 @@ struct MaintenanceView: View {
                 .padding(.horizontal, 30)
                 .frame(width: geometry.size.width * 0.6)
             }
+            
+            // Centered Run Button
+            runButton
+                .padding(.bottom, 40)
+        }
         }
         .background(BackgroundStyles.privacy)
     }
