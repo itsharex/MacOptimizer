@@ -12,67 +12,69 @@ struct LargeFileDetailsSplitView: View {
         case size, name, date
     }
     
-    // Categories matching the design + existing file types
+    // Categories matching the design
     private let categories = [
         "All", 
-        "Archives", "Documents", // Existing
-        "Small", "Medium", // Size based
-        "One Month Ago", "One Week Ago", // Date based
-        "Movies", "Music", "Pictures", "Others" // Type based
+        "Archives", "Documents", "Movies", "Music", "Pictures", "Others", // Type based
+        "Huge", "Medium", "Small", // Size based
+        "One Month Ago", "One Week Ago", "One Year Ago" // Date based
     ]
     
+    // Filter logic helper
+    private func filterFiles(for category: String) -> [FileItem] {
+        let files = scanner.foundFiles
+        switch category {
+        case "All": return files
+        case "Movies": return files.filter { ["mp4", "mov", "avi", "mkv", "m4v"].contains($0.type.lowercased()) }
+        case "Archives": return files.filter { ["zip", "rar", "7z", "tar", "gz", "dmg", "iso", "pkg"].contains($0.type.lowercased()) }
+        case "Music": return files.filter { ["mp3", "wav", "aac", "flac", "m4a"].contains($0.type.lowercased()) }
+        case "Pictures": return files.filter { ["jpg", "jpeg", "png", "gif", "heic", "tiff", "bmp", "svg"].contains($0.type.lowercased()) }
+        case "Documents": return files.filter { ["pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "txt", "md"].contains($0.type.lowercased()) }
+        case "Others":
+            let knownTypes = ["mp4", "mov", "avi", "mkv", "m4v", "zip", "rar", "7z", "tar", "gz", "dmg", "iso", "pkg", "mp3", "wav", "aac", "flac", "m4a", "jpg", "jpeg", "png", "gif", "heic", "tiff", "bmp", "svg", "pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "txt", "md"]
+            return files.filter { !knownTypes.contains($0.type.lowercased()) }
+            
+        case "Huge": return files.filter { $0.size > 1024 * 1024 * 1024 } // > 1GB
+        case "Medium": return files.filter { $0.size >= 500 * 1024 * 1024 && $0.size <= 1024 * 1024 * 1024 } // 500MB - 1GB
+        case "Small": return files.filter { $0.size >= 50 * 1024 * 1024 && $0.size < 500 * 1024 * 1024 } // 50MB - 500MB
+            
+        case "One Month Ago":
+            let date = Calendar.current.date(byAdding: .month, value: -1, to: Date()) ?? Date()
+            return files.filter { $0.accessDate < date }
+        case "One Week Ago":
+            let date = Calendar.current.date(byAdding: .day, value: -7, to: Date()) ?? Date()
+            return files.filter { $0.accessDate < date }
+        case "One Year Ago":
+            let date = Calendar.current.date(byAdding: .year, value: -1, to: Date()) ?? Date()
+            return files.filter { $0.accessDate < date }
+            
+        default: return files
+        }
+    }
+
     var filteredFiles: [FileItem] {
-        let files = scanner.foundFiles.filter { file in
+        let baseFiles = filterFiles(for: selectedCategory)
+        
+        let files = baseFiles.filter { file in
             if searchText.isEmpty { return true }
             return file.name.localizedCaseInsensitiveContains(searchText)
         }
         
-        // Category filtering
-        let categoryFiltered: [FileItem]
-        switch selectedCategory {
-        case "All": categoryFiltered = files
-        
-        // File Types
-        case "Movies": 
-            categoryFiltered = files.filter { ["mp4", "mov", "avi", "mkv", "m4v"].contains($0.type.lowercased()) }
-        case "Archives":
-            categoryFiltered = files.filter { ["zip", "rar", "7z", "tar", "gz", "dmg", "iso", "pkg"].contains($0.type.lowercased()) }
-        case "Music":
-            categoryFiltered = files.filter { ["mp3", "wav", "aac", "flac", "m4a"].contains($0.type.lowercased()) }
-        case "Pictures":
-            categoryFiltered = files.filter { ["jpg", "jpeg", "png", "gif", "heic", "tiff", "bmp", "svg"].contains($0.type.lowercased()) }
-        case "Documents":
-            categoryFiltered = files.filter { ["pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "txt", "md"].contains($0.type.lowercased()) }
-        case "Others":
-            let knownTypes = ["mp4", "mov", "avi", "mkv", "m4v", "zip", "rar", "7z", "tar", "gz", "dmg", "iso", "pkg", "mp3", "wav", "aac", "flac", "m4a", "jpg", "jpeg", "png", "gif", "heic", "tiff", "bmp", "svg", "pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "txt", "md"]
-            categoryFiltered = files.filter { !knownTypes.contains($0.type.lowercased()) }
-            
-        // Size Filters (Custom definitions for "Small" in context of "Large Files"? Or just smallest of the large?)
-        // Design shows "Small" (较小). Let's assume < 100MB or similar, relative to the 50MB min threshold.
-        case "Small":
-            categoryFiltered = files.filter { $0.size < 100 * 1024 * 1024 }
-        case "Medium":
-            categoryFiltered = files.filter { $0.size >= 100 * 1024 * 1024 && $0.size < 500 * 1024 * 1024 }
-            
-        // Date Filters
-        case "One Month Ago":
-            let oneMonthAgo = Calendar.current.date(byAdding: .month, value: -1, to: Date()) ?? Date()
-            categoryFiltered = files.filter { $0.accessDate < oneMonthAgo }
-        case "One Week Ago":
-            let oneWeekAgo = Calendar.current.date(byAdding: .day, value: -7, to: Date()) ?? Date()
-            categoryFiltered = files.filter { $0.accessDate < oneWeekAgo }
-            
-        default: categoryFiltered = files
-        }
-        
         // Sorting
-        return categoryFiltered.sorted {
+        return files.sorted {
             switch sortOption {
             case .size: return $0.size > $1.size
             case .name: return $0.name < $1.name
             case .date: return $0.accessDate > $1.accessDate
             }
         }
+    }
+    
+    // Calculate total size for a category
+    private func sizeForCategory(_ category: String) -> String {
+        let files = filterFiles(for: category)
+        let total = files.reduce(0) { $0 + $1.size }
+        return ByteCountFormatter.string(fromByteCount: total, countStyle: .file)
     }
     
     var totalSelectedSize: Int64 {
@@ -86,7 +88,6 @@ struct LargeFileDetailsSplitView: View {
                 // Return button area
                 HStack {
                     Button(action: {
-                        // Fix: Reset scanner instead of dismissing (which exits app if root)
                         withAnimation {
                             scanner.reset()
                         }
@@ -95,7 +96,7 @@ struct LargeFileDetailsSplitView: View {
                             Image(systemName: "chevron.left")
                             Text(loc.currentLanguage == .chinese ? "返回" : "Back")
                         }
-                        .foregroundColor(.white.opacity(0.8)) // Brighter text on dark bg
+                        .foregroundColor(.white.opacity(0.8))
                     }
                     .buttonStyle(.plain)
                     Spacer()
@@ -110,19 +111,26 @@ struct LargeFileDetailsSplitView: View {
                             .onTapGesture { selectedCategory = "All" }
                         
                         groupHeader("Type")
-                        ForEach(["Archives", "Documents", "Movies", "Music", "Pictures", "Others"], id: \.self) { cat in
+                        ForEach(["Archives", "Others"], id: \.self) { cat in
+                            categoryRow(title: cat, isSelected: selectedCategory == cat)
+                                .onTapGesture { selectedCategory = cat }
+                        }
+                        // Only show non-empty categories or main ones? User screenshot has limited list.
+                        // I will add the others but maybe conditionally hide empty ones later if requested.
+                        // For now showing specific requested ones + standard ones ensuring coverage.
+                        ForEach(["Documents", "Movies", "Music", "Pictures"], id: \.self) { cat in
                             categoryRow(title: cat, isSelected: selectedCategory == cat)
                                 .onTapGesture { selectedCategory = cat }
                         }
                         
                         groupHeader("Size")
-                        ForEach(["Small", "Medium"], id: \.self) { cat in
+                        ForEach(["Huge", "Medium", "Small"], id: \.self) { cat in
                             categoryRow(title: cat, isSelected: selectedCategory == cat)
                                 .onTapGesture { selectedCategory = cat }
                         }
                         
                         groupHeader("Date")
-                        ForEach(["One Month Ago", "One Week Ago"], id: \.self) { cat in
+                        ForEach(["One Week Ago", "One Month Ago", "One Year Ago"], id: \.self) { cat in
                             categoryRow(title: cat, isSelected: selectedCategory == cat)
                                 .onTapGesture { selectedCategory = cat }
                         }
@@ -131,7 +139,7 @@ struct LargeFileDetailsSplitView: View {
                 }
             }
             .frame(width: 200)
-            .background(Color.white.opacity(0.05)) // Subtle transparent separator or just clear
+            .background(Color.white.opacity(0.05))
             
             // Content
             VStack(spacing: 0) {
@@ -208,14 +216,14 @@ struct LargeFileDetailsSplitView: View {
                     } label: {
                         HStack(spacing: 4) {
                             Text(loc.currentLanguage == .chinese ? "立即移除" : "Remove Immediately")
-                            Image(systemName: "chevron.up") // Design shows arrows, chevron up/down
+                            Image(systemName: "chevron.up")
                         }
                         .foregroundColor(.secondaryText)
                     }
                     .menuStyle(.borderlessButton)
-                    .fixedSize() // Ensure it takes only needed space
+                    .fixedSize()
                     
-                    // Center: Circular Action Button for Remove (Clean)
+                    // Center: Circular Action Button
                     Button(action: {
                         Task {
                             await scanner.deleteItems(scanner.selectedFiles)
@@ -244,11 +252,11 @@ struct LargeFileDetailsSplitView: View {
                     .buttonStyle(.plain)
                     .disabled(scanner.selectedFiles.isEmpty)
                     
-                    // Right Side: Hidden balancer to keep button centered
+                    // Right Side: Hidden balancer
                     Menu { } label: {
                         HStack(spacing: 4) {
                             Text(loc.currentLanguage == .chinese ? "立即移除" : "Remove Immediately")
-                            Image(systemName: "chevron.up")
+                            Image(systemName: "chevron.up") 
                         }
                     }
                     .menuStyle(.borderlessButton)
@@ -260,7 +268,6 @@ struct LargeFileDetailsSplitView: View {
                 }
                 .padding()
                 .padding(.bottom, 20)
-                // .background(Color.black.opacity(0.3)) // Design seems to have it floating on gradient
             }
         }
     }
@@ -294,8 +301,8 @@ struct LargeFileDetailsSplitView: View {
                     .frame(width: 14, height: 14)
                 if isSelected {
                     Circle()
-                        .fill(Color.blue)
-                        .frame(width: 8, height: 8)
+                    .fill(Color.blue)
+                    .frame(width: 8, height: 8)
                 }
             }
             
@@ -305,7 +312,10 @@ struct LargeFileDetailsSplitView: View {
             
             Spacer()
             
-            // Size string could go here if we pre-calculated it
+            // Show Size
+            Text(sizeForCategory(title))
+                .font(.system(size: 11))
+                .foregroundColor(.white.opacity(0.6))
         }
         .padding(.vertical, 8)
         .padding(.horizontal, 12)
@@ -328,8 +338,10 @@ struct LargeFileDetailsSplitView: View {
         case "Pictures": return "图片"
         case "Documents": return "文档"
         case "Others": return "其他"
+        case "Huge": return "巨大"
         case "Small": return "较小"
         case "Medium": return "中等"
+        case "One Year Ago": return "一年前"
         case "One Month Ago": return "一个月前"
         case "One Week Ago": return "一周前"
         default: return title

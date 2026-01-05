@@ -2,7 +2,8 @@ import SwiftUI
 import AppKit
 
 // MARK: - Data Models
-struct AppUpdateItem: Identifiable, Hashable {
+// MARK: - Data Models
+struct AppUpdateItem: Identifiable, Hashable, Sendable {
     let id = UUID()
     let app: InstalledApp // Reference to the local app
     let newVersion: String

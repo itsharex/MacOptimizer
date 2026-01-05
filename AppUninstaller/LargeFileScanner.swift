@@ -65,37 +65,45 @@ class LargeFileScanner: ObservableObject {
         let fileManager = FileManager.default
         let home = fileManager.homeDirectoryForCurrentUser
         
-        // 获取 Home 下的主要子目录，并行扫描
-        // 扩展扫描范围以覆盖更多用户文件
-        let mainDirectories = [
-            "Documents", "Downloads", "Desktop", "Movies", "Music", "Pictures",
-            "Developer", "Projects", "Work", "src", "code", "Public", "Creative Cloud Files"
+        // Critical directories to exclude from recursion
+        let excludedDirs: Set<String> = [
+            "Library", "Applications", "Public", ".Trash", ".git", "node_modules", 
+            "go", "venv", ".build", "Pods" // Dev exclusions
         ]
         
-        // 需要排除的目录
-        let excludedDirs: Set<String> = ["Library", "Applications", "Public", ".Trash", ".git", "node_modules"]
+        // Get all top-level items in Home
+        guard let topLevelItems = try? fileManager.contentsOfDirectory(at: home, includingPropertiesForKeys: [.isDirectoryKey], options: [.skipsHiddenFiles]) else {
+            await MainActor.run { self.isScanning = false }
+            return
+        }
         
-        // 并发扫描所有主目录
         let collector = ScanResultCollector<FileItem>()
         var totalScannedCount = 0
         
         await withTaskGroup(of: ([FileItem], Int).self) { group in
-            // 扫描主要子目录
-            for dirName in mainDirectories {
-                let dirURL = home.appendingPathComponent(dirName)
-                guard fileManager.fileExists(atPath: dirURL.path) else { continue }
+            for itemURL in topLevelItems {
+                let name = itemURL.lastPathComponent
+                if excludedDirs.contains(name) { continue }
                 
-                group.addTask {
-                    await self.scanDirectoryForLargeFiles(dirURL, excludedDirs: excludedDirs)
+                // Determine if it's a directory
+                let resourceValues = try? itemURL.resourceValues(forKeys: [.isDirectoryKey, .isPackageKey])
+                let isDirectory = resourceValues?.isDirectory ?? false
+                let isPackage = resourceValues?.isPackage ?? false
+                
+                if isDirectory && !isPackage {
+                    // Spawn a task for each top-level directory (Recursively scan)
+                    group.addTask {
+                        await self.scanDirectoryRecursively(itemURL, excludedDirs: excludedDirs)
+                    }
+                } else {
+                    // Check file size directly
+                    group.addTask {
+                        await self.checkFileSize(itemURL)
+                    }
                 }
             }
             
-            // 扫描 Home 目录根级别的大文件（不递归）
-            group.addTask {
-                await self.scanRootLevelFiles(home)
-            }
-            
-            // 收集结果并批量更新 UI
+            // Collect results
             var batchFiles: [FileItem] = []
             var batchSize: Int64 = 0
             var lastUpdateTime = Date()
@@ -106,7 +114,7 @@ class LargeFileScanner: ObservableObject {
                 totalScannedCount += count
                 batchSize += files.reduce(0) { $0 + $1.size }
                 
-                // 每 0.2 秒或累积 20 个文件时更新 UI
+                // Update UI periodically
                 let now = Date()
                 if now.timeIntervalSince(lastUpdateTime) >= 0.2 || batchFiles.count >= 20 {
                     let currentFiles = batchFiles.sorted(by: { $0.size > $1.size })
@@ -118,7 +126,6 @@ class LargeFileScanner: ObservableObject {
                         self.totalSize = currentTotal
                         self.scannedCount = currentCount
                     }
-                    
                     lastUpdateTime = now
                 }
                 
@@ -126,7 +133,7 @@ class LargeFileScanner: ObservableObject {
             }
         }
         
-        // 最终结果
+        // Final Update
         let finalFiles = await collector.getResults().sorted(by: { $0.size > $1.size })
         let finalTotal = finalFiles.reduce(0) { $0 + $1.size }
         
@@ -139,12 +146,13 @@ class LargeFileScanner: ObservableObject {
         }
     }
     
-    /// 扫描单个目录中的大文件（并发优化版）
-    private func scanDirectoryForLargeFiles(_ directory: URL, excludedDirs: Set<String>) async -> ([FileItem], Int) {
+    private func scanDirectoryRecursively(_ directory: URL, excludedDirs: Set<String>) async -> ([FileItem], Int) {
         let fileManager = FileManager.default
         var files: [FileItem] = []
         var scannedCount = 0
         
+        // Use enumerator for deep recursion
+        // skipsPackageDescendants is CRITICAL to treat Apps/Bundles as single files
         let options: FileManager.DirectoryEnumerationOptions = [.skipsHiddenFiles, .skipsPackageDescendants]
         
         guard let enumerator = fileManager.enumerator(
@@ -154,11 +162,13 @@ class LargeFileScanner: ObservableObject {
         ) else { return (files, scannedCount) }
         
         while let fileURL = enumerator.nextObject() as? URL {
+            // Check for cancellation
+            if self.shouldStop || self.isStopped { break } // Simple check, though running in sync loop
+            
             scannedCount += 1
             
-            // 检查是否在排除目录中
-            let fileName = fileURL.lastPathComponent
-            if excludedDirs.contains(fileName) {
+            // Exclusion check
+            if excludedDirs.contains(fileURL.lastPathComponent) {
                 enumerator.skipDescendants()
                 continue
             }
@@ -166,12 +176,10 @@ class LargeFileScanner: ObservableObject {
             do {
                 let resourceValues = try fileURL.resourceValues(forKeys: [.fileSizeKey, .isDirectoryKey, .contentAccessDateKey])
                 
-                // 跳过目录
                 if let isDirectory = resourceValues.isDirectory, isDirectory {
                     continue
                 }
                 
-                // 检查文件大小
                 if let fileSize = resourceValues.fileSize, Int64(fileSize) > minimumSize {
                     let accessDate = resourceValues.contentAccessDate ?? Date()
                     let item = FileItem(
@@ -184,53 +192,32 @@ class LargeFileScanner: ObservableObject {
                     files.append(item)
                 }
             } catch {
-                // 静默处理权限错误
+                continue
             }
         }
         
         return (files, scannedCount)
     }
     
-    /// 扫描 Home 根目录级别的大文件（不递归）
-    private func scanRootLevelFiles(_ home: URL) async -> ([FileItem], Int) {
-        let fileManager = FileManager.default
+    // Check single file
+    private func checkFileSize(_ url: URL) async -> ([FileItem], Int) {
         var files: [FileItem] = []
-        var scannedCount = 0
-        
         do {
-            let contents = try fileManager.contentsOfDirectory(
-                at: home,
-                includingPropertiesForKeys: [.fileSizeKey, .isDirectoryKey, .contentAccessDateKey],
-                options: [.skipsHiddenFiles]
-            )
-            
-            for fileURL in contents {
-                scannedCount += 1
-                
-                let resourceValues = try? fileURL.resourceValues(forKeys: [.fileSizeKey, .isDirectoryKey, .contentAccessDateKey])
-                
-                // 只处理文件，不处理目录
-                if let isDirectory = resourceValues?.isDirectory, isDirectory {
-                    continue
-                }
-                
-                if let fileSize = resourceValues?.fileSize, Int64(fileSize) > minimumSize {
-                    let accessDate = resourceValues?.contentAccessDate ?? Date()
-                    let item = FileItem(
-                        url: fileURL,
-                        name: fileURL.lastPathComponent,
-                        size: Int64(fileSize),
-                        type: fileURL.pathExtension.isEmpty ? "File" : fileURL.pathExtension.uppercased(),
-                        accessDate: accessDate
-                    )
-                    files.append(item)
-                }
+            let resourceValues = try url.resourceValues(forKeys: [.fileSizeKey, .contentAccessDateKey])
+            if let fileSize = resourceValues.fileSize, Int64(fileSize) > minimumSize {
+                 let item = FileItem(
+                    url: url,
+                    name: url.lastPathComponent,
+                    size: Int64(fileSize),
+                    type: url.pathExtension.isEmpty ? "File" : url.pathExtension.uppercased(),
+                    accessDate: resourceValues.contentAccessDate ?? Date()
+                )
+                files.append(item)
             }
+            return (files, 1)
         } catch {
-            // 静默处理错误
+            return ([], 1)
         }
-        
-        return (files, scannedCount)
     }
     
     // Helper to get relative path

@@ -209,11 +209,11 @@ struct BackgroundStyles {
         endPoint: .bottomTrailing
     )
     
-    // 4. 大文件查找 (深空紫 - 探索/宇宙)
+    // 4. 大文件查找 (红紫渐变 - 匹配设计图)
     static let largeFiles = LinearGradient(
         stops: [
-            .init(color: Color(red: 0.1, green: 0.0, blue: 0.3), location: 0.0), // 深邃紫
-            .init(color: Color(red: 0.3, green: 0.0, blue: 0.6), location: 1.0)  // 亮紫
+            .init(color: Color(red: 0.85, green: 0.35, blue: 0.35), location: 0.0), // 柔和红
+            .init(color: Color(red: 0.25, green: 0.18, blue: 0.35), location: 1.0)  // 深紫
         ],
         startPoint: .topLeading,
         endPoint: .bottomTrailing
