@@ -138,6 +138,13 @@ struct GradientStyles {
         startPoint: .topLeading,
         endPoint: .bottomTrailing
     )
+
+    // 13. 更新程序 (蓝绿/青色渐变 - 匹配 CleanMyMac 更新风格)
+    static let updater = LinearGradient(
+        colors: [Color(hex: "00B894"), Color(hex: "00A8E8")], // Teal to Light Blue
+        startPoint: .topLeading,
+        endPoint: .bottomTrailing
+    )
     
     // 10. 智能清理 (蓝绿色)
     static let smartClean = LinearGradient(
@@ -162,6 +169,7 @@ struct GradientStyles {
         case .privacy: return privacy
         case .malware: return LinearGradient(colors: [Color(hex: "FF6B6B"), Color(hex: "FF8E53")], startPoint: .topLeading, endPoint: .bottomTrailing)
         case .smartClean: return smartClean
+        case .updater: return updater
         }
     }
 
@@ -259,6 +267,16 @@ struct BackgroundStyles {
         startPoint: .topLeading,
         endPoint: .bottomTrailing
     )
+
+    // 14. 更新程序 (青色/蓝绿渐变背景)
+    static let updater = LinearGradient(
+        stops: [
+            .init(color: Color(hex: "00B09B"), location: 0.0), // Greeish Teal
+            .init(color: Color(hex: "35495E"), location: 1.0)  // Dark Blue-Green
+        ],
+        startPoint: .topLeading,
+        endPoint: .bottomTrailing
+    )
     
     // 9. 智能清理 (紫靛色渐变 - 匹配设计图)
     static let smartClean = LinearGradient(
@@ -349,6 +367,7 @@ enum AppModule: String, CaseIterable, Identifiable {
     case privacy = "隐私保护"
     case largeFiles = "大文件查找"
     case uninstaller = "应用卸载"
+    case updater = "更新程序"    // New Updater Module
     case trash = "废纸篓"
     case malware = "移除恶意软件"
     case fileExplorer = "文件管理"
@@ -361,6 +380,7 @@ enum AppModule: String, CaseIterable, Identifiable {
         switch self {
         case .monitor: return "chart.bar.xaxis"
         case .uninstaller: return "puzzlepiece.extension"
+        case .updater: return "arrow.triangle.2.circlepath"
         case .deepClean: return "envelope"
         case .cleaner: return "globe"
         case .maintenance: return "wrench.and.screwdriver"
@@ -391,6 +411,7 @@ enum AppModule: String, CaseIterable, Identifiable {
         case .privacy:
             return LinearGradient(colors: [.red, .orange], startPoint: .topLeading, endPoint: .bottomTrailing)
         case .smartClean: return GradientStyles.smartClean
+        case .updater: return GradientStyles.updater
         }
     }
     
@@ -412,6 +433,7 @@ enum AppModule: String, CaseIterable, Identifiable {
         ], startPoint: .topLeading, endPoint: .bottomTrailing)
         case .privacy: return BackgroundStyles.privacy
         case .smartClean: return BackgroundStyles.smartClean
+        case .updater: return BackgroundStyles.updater
         }
     }
     
@@ -430,6 +452,7 @@ enum AppModule: String, CaseIterable, Identifiable {
         case .malware: return "移除恶意软件"
         case .privacy: return "保护您的隐私数据安全"
         case .smartClean: return "一键扫描并清理系统垃圾"
+        case .updater: return "让所有应用程序始终保持最新、最可靠的版本。"
         }
     }
 }

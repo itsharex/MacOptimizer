@@ -89,6 +89,10 @@ class AppScanner: ObservableObject {
             vendor = "Apple"
         }
         
+        // 获取应用版本
+        let version = bundle?.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? 
+                      bundle?.object(forInfoDictionaryKey: "CFBundleVersion") as? String
+        
         return InstalledApp(
             name: name,
             path: url,
@@ -96,7 +100,8 @@ class AppScanner: ObservableObject {
             icon: icon,
             size: size,
             vendor: vendor,
-            isAppStore: isAppStore
+            isAppStore: isAppStore,
+            version: version
         )
     }
     

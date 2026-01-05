@@ -31,7 +31,7 @@ enum SidebarSection: String, CaseIterable {
         case .speed:
             return [.optimizer, .maintenance, .monitor]
         case .apps:
-            return [.uninstaller]
+            return [.uninstaller, .updater]
         case .files:
             return [.fileExplorer, .largeFiles, .shredder]
         }
@@ -218,6 +218,7 @@ struct SidebarMenuItem: View {
         switch module {
         case .monitor: return localization.currentLanguage == .chinese ? "控制台" : "Monitor"
         case .uninstaller: return localization.currentLanguage == .chinese ? "卸载器" : "Uninstaller"
+        case .updater: return localization.currentLanguage == .chinese ? "更新程序" : "Updater"
         case .deepClean: return localization.currentLanguage == .chinese ? "深度清理" : "Deep Clean"
         case .cleaner: return localization.currentLanguage == .chinese ? "系统垃圾" : "System Junk"
         case .maintenance: return localization.currentLanguage == .chinese ? "维护" : "Maintenance"

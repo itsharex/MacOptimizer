@@ -81,6 +81,9 @@ struct ContentView: View {
                         case .smartClean:
                             SmartCleanerView(selectedModule: $selectedModule)
                                 .transition(.opacity.combined(with: .move(edge: .trailing)))
+                        case .updater:
+                            AppUpdaterView()
+                                .transition(.opacity.combined(with: .move(edge: .trailing)))
                         }
                     }
                     .animation(.easeInOut(duration: 0.3), value: selectedModule)
