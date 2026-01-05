@@ -242,26 +242,38 @@ struct PrivacyView: View {
             Spacer()
             
             // 扫描动画 - 停止标志微动
-            ZStack {
-                PolygonShape(sides: 8)
-                    .fill(
-                        LinearGradient(
-                            colors: [
-                                Color(red: 0.9, green: 0.4, blue: 0.6),
-                                Color(red: 0.7, green: 0.2, blue: 0.4)
-                            ],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
-                    .frame(width: 180, height: 180)
-                    .scaleEffect(pulse ? 1.05 : 1.0)
-                    .animation(Animation.easeInOut(duration: 1.0).repeatForever(autoreverses: true), value: pulse)
-                
-                Image(systemName: "hand.raised.fill")
-                    .font(.system(size: 80))
-                    .foregroundColor(.white)
-            }
+                // 扫描动画 - 停止标志 (yinsi.png)
+                ZStack {
+                    if let imagePath = Bundle.main.path(forResource: "yinsi", ofType: "png"),
+                       let nsImage = NSImage(contentsOfFile: imagePath) {
+                        Image(nsImage: nsImage)
+                            .resizable()
+                            .aspectRatio(contentMode: .fit)
+                            .frame(width: 240, height: 240)
+                            .shadow(color: Color.black.opacity(0.3), radius: 20, x: 0, y: 10)
+                            .scaleEffect(pulse ? 1.05 : 1.0)
+                            .animation(Animation.easeInOut(duration: 1.0).repeatForever(autoreverses: true), value: pulse)
+                    } else {
+                        // Fallback shape if icon missing
+                        PolygonShape(sides: 8)
+                            .fill(
+                                LinearGradient(
+                                    colors: [
+                                        Color(red: 0.9, green: 0.4, blue: 0.6),
+                                        Color(red: 0.7, green: 0.2, blue: 0.4)
+                                    ],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
+                            )
+                            .frame(width: 180, height: 180)
+                            .overlay(
+                                Image(systemName: "hand.raised.fill")
+                                    .font(.system(size: 80))
+                                    .foregroundColor(.white)
+                            )
+                    }
+                }
             .padding(.bottom, 40)
             
             // 扫描状态文本
@@ -385,7 +397,9 @@ struct PrivacyView: View {
         HStack(spacing: 0) {
             categoryListView
                 .frame(width: 250)
-                .background(Color.black.opacity(0.2))
+            categoryListView
+                .frame(width: 250)
+                .background(Color.black.opacity(0.15)) // Match Sidebar transparency
             
             detailListView
                 .background(Color.white.opacity(0.05))
@@ -578,40 +592,40 @@ struct PrivacyView: View {
     }
     
     private var resultsBottomBar: some View {
-        HStack {
-            Spacer()
+        ZStack {
+            // Clean Button (Round Floating)
+             // Glow
+             Circle()
+                .stroke(LinearGradient(colors: [.white.opacity(0.5), .white.opacity(0.1)], startPoint: .top, endPoint: .bottom), lineWidth: 1)
+                .frame(width: 90, height: 90)
             
             Button(action: startClean) {
                 ZStack {
-                    // Outer ring
                     Circle()
-                        .stroke(Color.white.opacity(0.3), lineWidth: 3)
+                        .fill(Color.white.opacity(0.25)) // Semi-transparent button
                         .frame(width: 80, height: 80)
-                    
-                    // Inner filled circle
-                    Circle()
-                        .fill(Color.white.opacity(0.15))
-                        .frame(width: 70, height: 70)
+                        .shadow(color: Color.black.opacity(0.2), radius: 10, y: 5)
                     
                     VStack(spacing: 2) {
                         Text(loc.currentLanguage == .chinese ? "移除" : "Remove")
-                            .font(.system(size: 14, weight: .medium))
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundColor(.white)
                     }
-                    .foregroundColor(.white)
                 }
             }
             .buttonStyle(.plain)
-            
-            // Selection count
-            Text("\(selectedItemCount) 项")
-                .font(.system(size: 14))
-                .foregroundColor(.white.opacity(0.8))
-                .padding(.leading, 8)
-            
-            Spacer()
         }
-        .frame(height: 100)
-        .background(Color.black.opacity(0.3))
+        .frame(maxWidth: .infinity)
+        .padding(.horizontal)
+        .padding(.bottom, 30)
+        .padding(.top, 20)
+        .background(
+            LinearGradient(
+                colors: [Color.black.opacity(0.0), Color.black.opacity(0.4)],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+        )
     }
     
     private var selectedItemCount: Int {

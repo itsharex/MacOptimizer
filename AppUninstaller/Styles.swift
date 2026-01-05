@@ -129,10 +129,11 @@ struct GradientStyles {
     )
     
     // 9. 隐私保护 (粉紫渐变 - 匹配设计图)
+    // 9. 隐私保护 (粉紫渐变 - 匹配设计图)
     static let privacy = LinearGradient(
         gradient: Gradient(colors: [
-            Color(red: 0.85, green: 0.45, blue: 0.65), // 粉色
-            Color(red: 0.65, green: 0.25, blue: 0.55)  // 紫色
+            Color(hex: "D65D89"), // Deep Pink/Red
+            Color(hex: "4A306D")  // Deep Purple
         ]),
         startPoint: .topLeading,
         endPoint: .bottomTrailing
@@ -251,8 +252,8 @@ struct BackgroundStyles {
     // 8. 隐私保护 (粉紫渐变 - 匹配设计图)
     static let privacy = LinearGradient(
         stops: [
-            .init(color: Color(red: 0.85, green: 0.45, blue: 0.65), location: 0.0), // 粉色
-            .init(color: Color(red: 0.45, green: 0.2, blue: 0.45), location: 1.0)  // 深紫
+            .init(color: Color(hex: "D65D89"), location: 0.0), // Deep Pink
+            .init(color: Color(hex: "4A306D"), location: 1.0)  // Deep Purple
         ],
         startPoint: .topLeading,
         endPoint: .bottomTrailing
