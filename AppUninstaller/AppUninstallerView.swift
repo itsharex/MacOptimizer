@@ -76,8 +76,9 @@ struct AppUninstallerView: View {
     }
 
     var body: some View {
-        HSplitView {
-            // MARK: - Sidebar
+        GeometryReader { geometry in
+            HStack(spacing: 0) {
+                // MARK: - Sidebar
             VStack(spacing: 0) {
                 // Header
                 HStack {
@@ -131,11 +132,13 @@ struct AppUninstallerView: View {
                             .onTapGesture { selectedCategory = .vendor(vendor) }
                     }
                 }
+
                 .listStyle(.plain)
                 .scrollContentBackground(.hidden)
             }
-            .frame(minWidth: 200, maxWidth: 250)
-            .background(Color.black.opacity(0.2))
+            .frame(width: 250)
+            // Left panel background removed for unification
+
             
             // MARK: - App List or Detail
             ZStack {
@@ -259,7 +262,9 @@ struct AppUninstallerView: View {
                     .transition(.move(edge: .leading))
                 }
             }
+
             .frame(maxWidth: .infinity)
+        }
         }
         .onAppear {
              if appScanner.apps.isEmpty {
@@ -524,7 +529,7 @@ struct AppUninstallerView: View {
                 }
             }
             .padding(12)
-            .background(Color.white.opacity(0.05))
+            .background(Color.clear) // Unified background, no specific row background
             .cornerRadius(8)
         }
     }
