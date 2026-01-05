@@ -24,30 +24,30 @@ struct TrashDetailsSplitView: View {
                             Image(systemName: "chevron.left")
                             Text(loc.currentLanguage == .chinese ? "返回" : "Back")
                         }
-                        .foregroundColor(.secondaryText)
+                        .foregroundColor(.white.opacity(0.8))
                     }
                     .buttonStyle(.plain)
                     Spacer()
                 }
                 .padding(16)
                 
-                // 全选/取消全选 (设计图左上角有个 "取消全选" 按钮)
+                // 全选/取消全选 header
                 HStack {
-                    Button(loc.L("deselectAll")) {
+                    Button(loc.currentLanguage == .chinese ? "取消全选" : "Deselect All") {
                         // TODO: Implement selection logic
                     }
                     .font(.caption)
-                    .foregroundColor(.white)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background(Color.white.opacity(0.1))
-                    .cornerRadius(4)
+                    .foregroundColor(.white.opacity(0.8))
                     
                     Spacer()
                     
-                    Text(loc.currentLanguage == .chinese ? "排序方式按 大小" : "Sort by Size")
-                        .font(.caption)
-                        .foregroundColor(.secondaryText)
+                    HStack(spacing: 2) {
+                        Text(loc.currentLanguage == .chinese ? "排序方式按 大小" : "Sort by Size")
+                        Image(systemName: "chevron.down")
+                            .font(.system(size: 8))
+                    }
+                    .font(.caption)
+                    .foregroundColor(.white.opacity(0.6))
                 }
                 .padding(.horizontal, 16)
                 .padding(.bottom, 8)
@@ -56,7 +56,7 @@ struct TrashDetailsSplitView: View {
                 ScrollView {
                     VStack(spacing: 2) {
                         ForEach(categories, id: \.self) { category in
-                            categoryRow(title: loc.L(category), size: scanner.formattedTotalSize, isSelected: selectedCategory == category)
+                            categoryRow(title: loc.currentLanguage == .chinese ? "mac 上的废纸篓" : "Trash on mac", size: scanner.formattedTotalSize, isSelected: selectedCategory == category)
                                 .onTapGesture {
                                     selectedCategory = category
                                 }
@@ -66,58 +66,66 @@ struct TrashDetailsSplitView: View {
                 }
             }
             .frame(width: 260)
-            .background(Color.black.opacity(0.2)) // Darker sidebar
+            // .background(Color.black.opacity(0.2)) // Removed to match unified design
+            .background(Color.clear)
             
             // 右侧文件列表
             VStack(spacing: 0) {
+                // ... (Previous content: Header, Title, Sort, List)
                 // 顶部工具栏 (搜索等)
                 HStack {
-                    Text(loc.L("trash"))
+                    Spacer()
+                    
+                    Text(loc.currentLanguage == .chinese ? "废纸篓" : "Trash")
                         .font(.headline)
                         .foregroundColor(.white)
+                        .padding(.leading, 40) // Balance
                     
                     Spacer()
                     
                     // 搜索框
                     HStack {
                         Image(systemName: "magnifyingglass")
-                            .foregroundColor(.secondaryText)
+                        // ...
+                        .foregroundColor(.white.opacity(0.6))
                         TextField(loc.currentLanguage == .chinese ? "搜索" : "Search", text: $searchText)
                             .textFieldStyle(.plain)
                             .foregroundColor(.white)
                     }
                     .padding(6)
-                    .background(Color.white.opacity(0.1))
+                    .background(Color.black.opacity(0.2))
                     .cornerRadius(6)
                     .frame(width: 200)
                     
-                    // 助手按钮 (Mock)
+                    // 助手按钮
                     Button(action: {}) {
-                        HStack {
-                            Circle().fill(Color.green).frame(width: 6, height: 6)
+                        HStack(spacing: 4) {
+                            Circle().fill(Color.white).frame(width: 6, height: 6)
                             Text(loc.currentLanguage == .chinese ? "助手" : "Assistant")
                         }
+                        .font(.caption)
+                        .foregroundColor(.white)
                         .padding(.horizontal, 10)
                         .padding(.vertical, 4)
-                        .background(Color.white.opacity(0.1))
+                        .background(Color.black.opacity(0.3))
                         .cornerRadius(12)
                     }
                     .buttonStyle(.plain)
                 }
                 .padding(12)
-                .background(Color.white.opacity(0.05))
                 
                 // 列表标题区域
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(loc.L("trash_on_mac"))
-                        .font(.title2)
-                        .bold()
+                    Text(loc.currentLanguage == .chinese ? "mac 上的废纸篓" : "mac Trash")
+                        .font(.system(size: 28, weight: .bold)) // Large Title
                         .foregroundColor(.white)
+                    
                     Text(loc.currentLanguage == .chinese ? "系统废纸篓文件夹存储先前删除的项目，但是它们仍然占用磁盘空间。" : "System Trash folder stores deleted items which still take up space.")
-                        .font(.caption)
-                        .foregroundColor(.secondaryText)
+                        .font(.system(size: 13))
+                        .foregroundColor(.white.opacity(0.8))
                 }
-                .padding(20)
+                .padding(.horizontal, 20)
+                .padding(.vertical, 20)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 
                 // 排序栏
@@ -125,7 +133,11 @@ struct TrashDetailsSplitView: View {
                     Spacer()
                     Text(loc.currentLanguage == .chinese ? "排序方式按 大小" : "Sort by Size")
                         .font(.caption)
-                        .foregroundColor(.secondaryText)
+                        .foregroundColor(.white.opacity(0.7))
+                    Image(systemName: "triangle.fill")
+                        .font(.system(size: 6))
+                        .rotationEffect(.degrees(180))
+                        .foregroundColor(.white.opacity(0.7))
                 }
                 .padding(.horizontal, 20)
                 .padding(.bottom, 8)
@@ -133,8 +145,8 @@ struct TrashDetailsSplitView: View {
                 // 文件列表
                 List {
                     ForEach(scanner.items) { item in
-                        TrashDetailRow(item: item)
-                            .listRowInsets(EdgeInsets(top: 4, leading: 20, bottom: 4, trailing: 20))
+                         TrashDetailRow(item: item)
+                            .listRowInsets(EdgeInsets(top: 6, leading: 20, bottom: 6, trailing: 20))
                             .listRowBackground(Color.clear)
                             .listRowSeparator(.hidden)
                     }
@@ -142,44 +154,53 @@ struct TrashDetailsSplitView: View {
                 .listStyle(.plain)
                 .scrollContentBackground(.hidden)
                 
-                // 底部清理栏
-                HStack {
-                    Spacer()
-                    // 圆形清理按钮 (带文字)
-                    Button(action: {
-                        showCleanConfirmation = true
-                    }) {
-                        ZStack {
-                            Circle()
-                                .stroke(LinearGradient(colors: [Color.blue.opacity(0.5), Color.blue], startPoint: .top, endPoint: .bottom), lineWidth: 2)
-                                .frame(width: 70, height: 70)
-                                .background(Circle().fill(Color.blue.opacity(0.2)))
-                            
-                            Text(loc.L("empty_trash")) // "清倒"
-                                .font(.system(size: 14, weight: .medium))
-                                .foregroundColor(.white)
+                Spacer()
+                
+                // 底部清理按钮 (Button Bottom Left as requested by user's red box)
+                HStack(spacing: 24) {
+                    ZStack {
+                         // Glow
+                         Circle()
+                            .stroke(LinearGradient(colors: [.white.opacity(0.5), .white.opacity(0.1)], startPoint: .top, endPoint: .bottom), lineWidth: 1)
+                            .frame(width: 80, height: 80)
+                        
+                        Button(action: {
+                            showCleanConfirmation = true
+                        }) {
+                            ZStack {
+                                Circle()
+                                    .fill(Color.white.opacity(0.25)) // Semi-transparent button
+                                    .frame(width: 70, height: 70)
+                                    .shadow(color: Color.black.opacity(0.2), radius: 10, y: 5)
+                                
+                                VStack(spacing: 2) {
+                                    Text(loc.currentLanguage == .chinese ? "清倒" : "Clean")
+                                        .font(.system(size: 16, weight: .semibold))
+                                        .foregroundColor(.white)
+                                }
+                            }
                         }
+                        .buttonStyle(.plain)
                     }
-                    .buttonStyle(.plain)
                     
+                    // Size next to it
                     Text(scanner.formattedTotalSize)
                         .font(.title3)
-                        .foregroundColor(.secondaryText)
-                        .padding(.leading, 10)
+                        .foregroundColor(.white.opacity(0.9))
                     
-                    Spacer()
+                    Spacer() // Push to Left
                 }
-                .padding(.vertical, 10)
-                .background(Color.black.opacity(0.3))
+                .padding(.leading, 40) // Align roughly with content margin
+                .padding(.bottom, 30)
             }
         }
+        .background(TealMeshBackground()) // Unified background
         .confirmationDialog(loc.L("empty_trash"), isPresented: $showCleanConfirmation) {
             Button(loc.L("empty_trash"), role: .destructive) {
                 Task {
                    _ = await scanner.emptyTrash()
-                   // Back to main view or show finished
-                   // 这里需要处理状态，可能要把 showCleaningFinished 状态提升或者通过 callback
-                   // 简化起见，直接 dismiss? 或者 scanner 会触发 finished page
+                   // Back to main view handled by state in parent usually, or reset
+                   presentationMode.wrappedValue.dismiss()
                 }
             }
             Button(loc.L("cancel"), role: .cancel) {}
@@ -190,51 +211,81 @@ struct TrashDetailsSplitView: View {
     
     private func categoryRow(title: String, size: String, isSelected: Bool) -> some View {
         HStack {
-            Image(systemName: "checkmark.circle.fill") // Mock selection state
-                .foregroundColor(.blue)
-            Image(systemName: "trash")
-                .foregroundColor(.white)
+            // Custom Checkbox
+            ZStack {
+                Circle()
+                    .fill(Color(hex: "007AFF")) // Blue fill
+                    .frame(width: 18, height: 18)
+                Image(systemName: "checkmark")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundColor(.white)
+            }
+            
+            // Icon Background
+            ZStack {
+                // Trash icon looks like a folder with items or just trash can
+                if let imagePath = Bundle.main.path(forResource: "feizhilou", ofType: "png"), // Use trash icon for category
+                   let nsImage = NSImage(contentsOfFile: imagePath) {
+                    Image(nsImage: nsImage)
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .frame(width: 24, height: 24)
+                } else {
+                     Image(systemName: "trash.fill")
+                        .foregroundColor(.white)
+                }
+            }
+            .frame(width: 32, height: 32)
+            
             Text(title)
                 .foregroundColor(.white)
-                .font(.system(size: 13))
+                .font(.system(size: 13, weight: .medium))
+            
             Spacer()
+            
             Text(size)
-                .font(.caption)
-                .foregroundColor(.white.opacity(0.7))
+                .font(.system(size: 13))
+                .foregroundColor(.white.opacity(0.9))
         }
         .padding(.vertical, 8)
         .padding(.horizontal, 12)
-        .background(isSelected ? Color.white.opacity(0.1) : Color.clear)
+        .background(isSelected ? Color.white.opacity(0.15) : Color.clear) // Rounded pill selection
         .cornerRadius(6)
     }
 }
 
-struct TrashDetailRow: View { // Renamed from TrashItemRow to avoid conflict if in same file context, but previously it was inside TrashView scope or global? Swift allows file private or global. TrashItemRow was global in previous file snippet.
-    // Let's reuse TrashItemRow but modify it to match design Img 1 (Checkbox style)
+struct TrashDetailRow: View {
     let item: TrashItem
     
     var body: some View {
-        HStack {
-            Image(systemName: "checkmark.circle.fill") // Checkbox
-                .foregroundColor(.blue)
-                .font(.system(size: 14))
+        HStack(spacing: 12) {
+            // Checkbox (Blue circle with checkmark)
+            ZStack {
+                Circle()
+                    .fill(Color(hex: "007AFF"))
+                    .frame(width: 16, height: 16)
+                Image(systemName: "checkmark")
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundColor(.white)
+            }
             
-            // Icon
-            Image(nsImage: NSWorkspace.shared.icon(forFile: item.url.path))
-                .resizable()
-                .frame(width: 24, height: 24)
+            // Folder Icon (Blue)
+            Image(systemName: item.isDirectory ? "folder.fill" : "doc.fill")
+                .font(.system(size: 20))
+                .foregroundColor(Color(hex: "5AC8FA")) // Light Blue Folder Color
             
             Text(item.name)
-                .font(.system(size: 13))
+                .font(.system(size: 14))
                 .foregroundColor(.white)
                 .lineLimit(1)
             
             Spacer()
             
             Text(item.formattedSize)
-                .font(.system(size: 12))
-                .foregroundColor(.white)
+                .font(.system(size: 13))
+                .foregroundColor(.white.opacity(0.8))
         }
-        .padding(.vertical, 4)
+        .padding(.vertical, 6)
+        .contentShape(Rectangle())
     }
 }

@@ -404,16 +404,22 @@ struct TrashView: View {
                 switch scanState {
                 case .initial:
                     initialPage
+                        .background(TealMeshBackground())
                 case .scanning:
                     scanningPage
+                        .background(TealMeshBackground())
                 case .completed:
                     resultsPage
+                         .background(TealMeshBackground())
                 case .clean:
                     cleanPage
+                        .background(TealMeshBackground())
                 case .cleaning:
                     cleaningPage
+                        .background(TealMeshBackground())
                 case .finished:
                     finishedPage
+                        .background(TealMeshBackground())
                 }
             }
         }
@@ -432,80 +438,343 @@ struct TrashView: View {
     
     // MARK: - 1. 初始页面
     private var initialPage: some View {
-        VStack(spacing: 0) {
-            Spacer()
-            
-            // 图标 (绿色圆形背景)
-            ZStack {
-                Circle()
-                    // 使用 Styles.swift 中更新后的青绿色渐变
-                    .fill(GradientStyles.trash.opacity(0.8))
-                    .frame(width: 180, height: 180)
-                    .shadow(color: Color(red: 0.0, green: 0.8, blue: 0.7).opacity(0.3), radius: 20, x: 0, y: 10)
-                
-                Image(systemName: "trash")
-                    .font(.system(size: 80))
-                    .foregroundColor(.white)
-            }
-            .padding(.bottom, 40)
-            
-            // 标题
-            Text(loc.L("trash"))
-                .font(.system(size: 28, weight: .semibold))
-                .foregroundColor(.white)
-                .padding(.bottom, 12)
-            
-            // 描述
-            Text(loc.currentLanguage == .chinese ? "强力清理 Mac 上所有垃圾，包括邮件和照片图库垃圾。" : "Force empty Trash on Mac, including Mail and Photos trash.")
-                .font(.body)
-                .foregroundColor(.secondaryText)
-                .multilineTextAlignment(.center)
-                .padding(.horizontal, 40)
-                .padding(.bottom, 60)
-            
-            // 功能列表 (Stack 布局)
-            VStack(alignment: .leading, spacing: 20) {
-                featureRow(icon: "trash.fill", title: loc.currentLanguage == .chinese ? "立即清理所有垃圾" : "Empty Trash immediately", subtitle: loc.currentLanguage == .chinese ? "无需浏览所有文件或文件夹它们的原始位置。" : "No need to browse files or their locations.")
-                
-                featureRow(icon: "lock.open.fill", title: loc.currentLanguage == .chinese ? "避免各种“访达”错误" : "Avoid Finder errors", subtitle: loc.currentLanguage == .chinese ? "确保能删除您的废纸篓，不管是否有任何问题。" : "Ensures your Trash is emptied despite any issues.")
-            }
-            .padding(.horizontal, 60)
-            .padding(.bottom, 60)
-            
-            Spacer()
-            
-            // 扫描按钮
-            CircularActionButton(
-                title: loc.currentLanguage == .chinese ? "扫描" : "Scan",
-                gradient: CircularActionButton.blueGradient,
-                action: {
-                    Task { await scanner.scan() }
+        ZStack {
+            // Main Content (2 Columns)
+            HStack(spacing: 0) {
+                // Left Column: Text & Features
+                VStack(alignment: .leading, spacing: 0) {
+                    Spacer()
+                    
+                    // Title
+                    Text(loc.currentLanguage == .chinese ? "废纸篓" : "Trash")
+                        .font(.system(size: 40, weight: .bold))
+                        .foregroundColor(.white)
+                        .padding(.bottom, 16)
+                    
+                    // Subtitle
+                    Text(loc.currentLanguage == .chinese ? "倾倒 Mac 上所有废纸篓，包括邮件和照片图库垃圾。" : "Dump all Trash on Mac, including Mail and Photos trash.")
+                        .font(.system(size: 15))
+                        .foregroundColor(.white.opacity(0.8))
+                        .lineSpacing(4)
+                        .padding(.bottom, 40)
+                        .fixedSize(horizontal: false, vertical: true)
+                    
+                    // Feature List
+                    VStack(alignment: .leading, spacing: 32) {
+                        featureRow(
+                            icon: "trash",
+                            title: loc.currentLanguage == .chinese ? "立即倾倒所有垃圾" : "Dump all trash immediately",
+                            subtitle: loc.currentLanguage == .chinese ? "无需浏览所有驱动器和应用查找它们的废纸篓。" : "No need to browse all drives and apps to find their trash."
+                        )
+                        
+                        featureRow(
+                            icon: "finder",
+                            title: loc.currentLanguage == .chinese ? "避免各种“访达”错误" : "Avoid various Finder errors",
+                            subtitle: loc.currentLanguage == .chinese ? "确保倾倒您的废纸篓，不管是否有任何问题。" : "Ensures your Trash is emptied regardless of any issues."
+                        )
+                    }
+                    .padding(.bottom, 100) // Create space for bottom button if needed, or just layout balance
+                    
+                    Spacer()
                 }
-            )
-            .padding(.bottom, 60)
+                .padding(.horizontal, 40)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                
+                // Right Column: Large Icon Only
+                VStack {
+                    Spacer()
+                    
+                    // Icon (Direct Image)
+                    if let imagePath = Bundle.main.path(forResource: "feizhilou", ofType: "png"),
+                       let nsImage = NSImage(contentsOfFile: imagePath) {
+                        Image(nsImage: nsImage)
+                            .resizable()
+                            .aspectRatio(contentMode: .fit)
+                            .frame(width: 340, height: 340) // Large size
+                            .shadow(color: .black.opacity(0.2), radius: 20, y: 10)
+                    } else {
+                        Image(systemName: "trash.circle.fill")
+                            .font(.system(size: 200))
+                            .foregroundColor(.green)
+                    }
+                    
+                    Spacer()
+                }
+                .frame(width: 400)
+            }
+            .padding(.bottom, 60) // Space for button
+            
+            // Scan Button (Bottom Center Overlay)
+            VStack {
+                Spacer()
+                
+                CircularActionButton(
+                    title: loc.currentLanguage == .chinese ? "扫描" : "Scan",
+                    gradient: GradientStyles.fileExplorer,
+                    action: {
+                        Task { await scanner.scan() }
+                    }
+                )
+                .shadow(color: Color.blue.opacity(0.4), radius: 10, y: 5)
+                .padding(.bottom, 60)
+            }
         }
     }
     
+    // ... featureRow ...
     private func featureRow(icon: String, title: String, subtitle: String) -> some View {
         HStack(alignment: .top, spacing: 16) {
-            Image(systemName: icon)
-                .font(.system(size: 24))
-                .foregroundColor(.white.opacity(0.8))
-                .frame(width: 32)
+            if icon == "finder" {
+                 Image(systemName: "face.smiling")
+                    .font(.system(size: 24))
+                    .foregroundColor(.white.opacity(0.9))
+                    .frame(width: 32)
+            } else {
+                 Image(systemName: icon)
+                    .font(.system(size: 24))
+                    .foregroundColor(.white.opacity(0.9))
+                    .frame(width: 32)
+            }
             
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: 6) {
                 Text(title)
-                    .font(.headline)
+                    .font(.system(size: 16, weight: .semibold))
                     .foregroundColor(.white)
                 Text(subtitle)
-                    .font(.caption)
-                    .foregroundColor(.secondaryText)
+                    .font(.system(size: 13))
+                    .foregroundColor(.white.opacity(0.7))
+                    .lineSpacing(2)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
     }
+
+    // MARK: - 2. 扫描中页面
+    private var scanningPage: some View {
+        VStack(spacing: 0) {
+            // 顶部标题
+            HStack {
+                Text(loc.currentLanguage == .chinese ? "废纸篓" : "Trash")
+                    .font(.title2)
+                    .foregroundColor(.white)
+            }
+            .padding(.top, 20)
+            
+            Spacer()
+            
+            // 中心动画图标 (Direct Image) -> Static Size enforcement
+            ZStack {
+                if let imagePath = Bundle.main.path(forResource: "feizhilou", ofType: "png"),
+                   let nsImage = NSImage(contentsOfFile: imagePath) {
+                    Image(nsImage: nsImage)
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .frame(width: 280, height: 280)
+                } else {
+                     Image(systemName: "trash")
+                        .font(.system(size: 100))
+                        .foregroundColor(.white)
+                }
+            }
+            .frame(width: 280, height: 280) // Enforce frame container
+            .padding(.bottom, 40)
+            
+            // 状态文字 - Use fixed frame to avoid layout jitter
+            VStack(spacing: 8) {
+                Text(loc.currentLanguage == .chinese ? "正在计算废纸篓文件夹的大小..." : "Calculating Trash size...")
+                    .font(.title) 
+                    .foregroundColor(.white)
+                
+                Text(scanner.currentScanPath) 
+                    .font(.body)
+                    .foregroundColor(.white.opacity(0.6))
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .frame(height: 20) // Fixed text height
+                    .padding(.horizontal, 40)
+                
+                Text(loc.currentLanguage == .chinese ? "系统废纸篓" : "System Trash")
+                    .font(.caption)
+                    .foregroundColor(.secondaryText)
+            }
+            .frame(maxWidth: .infinity)
+            
+            Spacer()
+            
+            // 停止按钮 (Bottom Center of Screen)
+            ZStack {
+                Circle()
+                    .stroke(Color.white.opacity(0.2), lineWidth: 4)
+                    .frame(width: 80, height: 80)
+                
+                Circle()
+                    .trim(from: 0, to: 0.75) 
+                    .stroke(Color.white, style: StrokeStyle(lineWidth: 4, lineCap: .round))
+                    .frame(width: 80, height: 80)
+                    .rotationEffect(.degrees(-90))
+                
+                Button(action: {
+                    scanner.stopScan()
+                }) {
+                    VStack(spacing: 2) {
+                        Text(loc.currentLanguage == .chinese ? "停止" : "Stop")
+                            .font(.system(size: 16, weight: .medium))
+                            .foregroundColor(.white)
+                    }
+                    .frame(width: 70, height: 70)
+                    .background(Color.white.opacity(0.15))
+                    .clipShape(Circle())
+                }
+                .buttonStyle(.plain)
+            }
+            
+            // Size below stop button
+            Text(scanner.formattedTotalSize)
+                .font(.headline)
+                .foregroundColor(.white.opacity(0.9))
+                .padding(.top, 10)
+                .opacity(scanner.scannedItemCount > 0 ? 1 : 0) // Fade in instead of layout shift? Or just keep space
+            
+            Spacer()
+                .frame(height: 60)
+        }
+    }
     
-    // MARK: - 1.5. Clean Page
+    // MARK: - 3. 扫描结果页面
+    private var resultsPage: some View {
+        VStack(spacing: 0) {
+            // Top: Back Button
+            HStack {
+                Button(action: {
+                    scanner.reset()
+                }) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "chevron.left")
+                        Text(loc.currentLanguage == .chinese ? "重新开始" : "Start Over")
+                    }
+                    .foregroundColor(.white.opacity(0.8))
+                }
+                .buttonStyle(.plain)
+                
+                Spacer()
+                
+                Text(loc.currentLanguage == .chinese ? "废纸篓" : "Trash")
+                    .font(.title3)
+                    .foregroundColor(.white)
+                
+                Spacer()
+                
+                // Assistant placeholder
+                 HStack {
+                    Circle().fill(Color.white.opacity(0.2)).frame(width: 6, height: 6)
+                    Text(loc.currentLanguage == .chinese ? "助手" : "Assistant")
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 4)
+                .background(Color.white.opacity(0.1))
+                .cornerRadius(12)
+                .opacity(0.8)
+            }
+            .padding(.horizontal, 24)
+            .padding(.top, 20)
+            
+            Spacer()
+            
+            // Main Content: Icon Left, Text Right
+            HStack(spacing: 60) {
+                // Large Icon Circle (Direct Image)
+                if let imagePath = Bundle.main.path(forResource: "feizhilou", ofType: "png"),
+                   let nsImage = NSImage(contentsOfFile: imagePath) {
+                    Image(nsImage: nsImage)
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .frame(width: 300, height: 300) // Large
+                } else {
+                     Image(systemName: "trash.fill")
+                         .font(.system(size: 150))
+                         .foregroundColor(.white)
+                }
+                
+                // Text Info
+                VStack(alignment: .leading, spacing: 16) {
+                    Text(loc.currentLanguage == .chinese ? "扫描完毕" : "Scan Complete")
+                        .font(.system(size: 32, weight: .bold))
+                        .foregroundColor(.white)
+                    
+                    HStack(alignment: .firstTextBaseline, spacing: 12) {
+                        Text(scanner.formattedTotalSize)
+                            .font(.system(size: 60, weight: .light)) 
+                            .foregroundColor(Color(hex: "60EFFF")) 
+                        
+                        Text(loc.L("smart_select"))
+                            .font(.system(size: 14))
+                            .foregroundColor(.white.opacity(0.6))
+                    }
+                    
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(loc.currentLanguage == .chinese ? "包括" : "Including")
+                            .font(.system(size: 14))
+                            .foregroundColor(.white.opacity(0.6))
+                        
+                        HStack(spacing: 8) {
+                            Circle().fill(Color.white.opacity(0.6)).frame(width: 4, height: 4)
+                            Text(loc.currentLanguage == .chinese ? "mac 上的废纸篓" : "Trash on mac")
+                                .font(.system(size: 14))
+                                .foregroundColor(.white.opacity(0.8))
+                        }
+                    }
+                    
+                    // View Items Button
+                    NavigationLink(destination: TrashDetailsSplitView(scanner: scanner)) {
+                        Text(loc.L("view_items")) 
+                            .font(.system(size: 14))
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 20)
+                            .padding(.vertical, 8)
+                            .background(Color.white.opacity(0.15))
+                            .cornerRadius(6)
+                    }
+                    .buttonStyle(.plain)
+                    
+                    HStack {
+                         Text(loc.currentLanguage == .chinese ? "共发现" : "Total found")
+                         Text(scanner.formattedTotalSize)
+                             .foregroundColor(.white)
+                    }
+                    .font(.caption)
+                    .foregroundColor(.white.opacity(0.5))
+                }
+            }
+            
+            Spacer()
+            
+            // Clean Button (Floating circular, Bottom Center)
+            ZStack {
+                // Outer Glow Ring
+                Circle()
+                    .stroke(LinearGradient(colors: [.white.opacity(0.6), .white.opacity(0.1)], startPoint: .top, endPoint: .bottom), lineWidth: 2)
+                    .frame(width: 90, height: 90)
+                
+                Button(action: {
+                     showEmptyConfirmation = true
+                }) {
+                    ZStack {
+                        Circle()
+                             .fill(Color.white.opacity(0.2))
+                             .frame(width: 80, height: 80)
+                        
+                        Text(loc.currentLanguage == .chinese ? "倾倒" : "Clean")
+                             .font(.system(size: 18, weight: .medium))
+                             .foregroundColor(.white)
+                    }
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(.bottom, 60)
+        }
+    }
+    
+    // MARK: - 3.5. Clean Page
     private var cleanPage: some View {
         VStack(spacing: 0) {
             // Top Nav
@@ -517,7 +786,7 @@ struct TrashView: View {
                         Image(systemName: "chevron.left")
                         Text(loc.currentLanguage == .chinese ? "重新开始" : "Start Over")
                     }
-                    .foregroundColor(.secondaryText)
+                    .foregroundColor(.white.opacity(0.8))
                 }
                 .buttonStyle(.plain)
                 
@@ -538,37 +807,28 @@ struct TrashView: View {
             
             Spacer()
             
-            // Central Icon (Green Trash Badge)
+            // Central Icon (Using feizhilou.png)
             ZStack {
-                Circle()
-                    .fill(GradientStyles.trash.opacity(0.8))
-                    .frame(width: 250, height: 250)
-                    .shadow(color: Color(red: 0.0, green: 0.8, blue: 0.7).opacity(0.3), radius: 20, x: 0, y: 10)
-                
-                VStack(spacing: 0) {
+                if let imagePath = Bundle.main.path(forResource: "feizhilou", ofType: "png"),
+                   let nsImage = NSImage(contentsOfFile: imagePath) {
+                    Image(nsImage: nsImage)
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .frame(width: 250, height: 250)
+                } else {
                      Image(systemName: "trash")
                         .font(.system(size: 80))
                         .foregroundColor(.white)
-                     
-                     // Checkmark badge
-                     /*
-                     Image(systemName: "checkmark")
-                          .font(.system(size: 40))
-                          .foregroundColor(.white)
-                          .padding(8)
-                          .background(Circle().fill(Color.green))
-                          .offset(x: 40, y: -40) // Adjust position to be like a badge if needed, or just separate
-                     */
                 }
-            }
-            .overlay(
-                 Image(systemName: "checkmark.circle.fill")
+                
+                // Checkmark badge
+                Image(systemName: "checkmark.circle.fill")
                     .font(.system(size: 60))
-                    .foregroundColor(.white) // Or green
-                    .background(Circle().fill(Color.green)) // Ensure background is green
-                     .foregroundColor(.white)
+                    .foregroundColor(.green)
+                    .background(Circle().fill(Color.white)) // White bg for checkmark to pop
+                    .clipShape(Circle())
                     .offset(x: 60, y: 80)
-            )
+            }
             .padding(.bottom, 30)
 
             // Text
@@ -586,7 +846,7 @@ struct TrashView: View {
             
             Text(loc.currentLanguage == .chinese ? "任何废纸篓中都没有文件。" : "No files found in any Trash bin.")
                 .font(.body)
-                .foregroundColor(.secondaryText)
+                .foregroundColor(.white.opacity(0.8))
             
             Spacer()
             
@@ -596,188 +856,6 @@ struct TrashView: View {
                  gradient: CircularActionButton.blueGradient,
                  action: {
                      scanner.reset()
-                 }
-             )
-             .padding(.bottom, 60)
-        }
-    }
-
-    // MARK: - 2. 扫描中页面
-    private var scanningPage: some View {
-        VStack(spacing: 0) {
-            // 顶部标题
-            HStack {
-                Text(loc.L("trash"))
-                    .font(.title2)
-                    .foregroundColor(.white)
-            }
-            .padding(.top, 20)
-            
-            Spacer()
-            
-            // 中心动画图标
-            ZStack {
-                Circle()
-                    .fill(GradientStyles.trash)
-                    .frame(width: 140, height: 140)
-                    .shadow(color: Color(red: 0.0, green: 0.8, blue: 0.7).opacity(0.3), radius: 20, x: 0, y: 10)
-                
-                Image(systemName: "trash")
-                    .font(.system(size: 60))
-                    .foregroundColor(.white)
-            }
-            .padding(.bottom, 40)
-            
-            // 状态文字
-            Text(loc.currentLanguage == .chinese ? "正在计算废纸篓文件夹的大小..." : "Calculating Trash size...")
-                .font(.title3)
-                .foregroundColor(.white)
-                .padding(.bottom, 8)
-            
-            Text(loc.currentLanguage == .chinese ? "系统废纸篓" : "System Trash")
-                .font(.caption)
-                .foregroundColor(.secondaryText)
-                .padding(.bottom, 40)
-            
-            Spacer()
-            
-            // 停止按钮 (显示计数)
-            CircularActionButton(
-                title: loc.currentLanguage == .chinese ? "停止" : "Stop",
-                gradient: CircularActionButton.stopGradient,
-                progress: 0.5, // 模拟进度，或者 infinite
-                showProgress: true,
-                scanSize: "\(scanner.scannedItemCount)", // 显示已扫描数量
-                action: {
-                    scanner.stopScan()
-                }
-            )
-            .padding(.bottom, 60)
-        }
-    }
-    
-    // MARK: - 3. 扫描结果页面
-    private var resultsPage: some View {
-        VStack(spacing: 0) {
-            // 顶部导航
-            HStack {
-                Button(action: {
-                    scanner.reset()
-                }) {
-                    HStack(spacing: 4) {
-                        Image(systemName: "chevron.left")
-                        Text(loc.currentLanguage == .chinese ? "重新开始" : "Start Over")
-                    }
-                    .foregroundColor(.secondaryText)
-                }
-                .buttonStyle(.plain)
-                
-                Spacer()
-                
-                Text(loc.L("trash"))
-                    .font(.title2)
-                    .foregroundColor(.white)
-                
-                Spacer()
-                
-                // 占位
-                HStack(spacing: 4) {
-                    Text(loc.currentLanguage == .chinese ? "重新开始" : "Start Over")
-                        .opacity(0)
-                        .accessibilityHidden(true)
-                }
-            }
-            .padding(.horizontal, 24)
-            .padding(.top, 20)
-            
-            Spacer()
-            
-            HStack(spacing: 40) {
-                // 左侧大图标
-                ZStack {
-                    Circle()
-                        .fill(GradientStyles.trash)
-                        .frame(width: 200, height: 200)
-                        .shadow(color: Color(red: 0.0, green: 0.8, blue: 0.7).opacity(0.4), radius: 20, x: 0, y: 10)
-                    
-                    Image(systemName: "trash")
-                        .font(.system(size: 80))
-                        .foregroundColor(.white)
-                        // Trash contents visualization (simple dots)
-                        .overlay(
-                            VStack(spacing: 6) {
-                                HStack(spacing: 6) { Circle().frame(width: 6); Circle().frame(width: 6); Circle().frame(width: 6) }
-                                HStack(spacing: 6) { Circle().frame(width: 6); Circle().frame(width: 6); Circle().frame(width: 6) }
-                                HStack(spacing: 6) { Circle().frame(width: 6); Circle().frame(width: 6); Circle().frame(width: 6) }
-                            }
-                            .foregroundColor(.white.opacity(0.5))
-                            .offset(y: 10)
-                        )
-                }
-                
-                // 右侧信息
-                VStack(alignment: .leading, spacing: 10) {
-                    Text(loc.currentLanguage == .chinese ? "扫描完毕" : "Scan Complete")
-                        .font(.title)
-                        .bold()
-                        .foregroundColor(.white)
-                    
-                    HStack(alignment: .firstTextBaseline, spacing: 10) {
-                        Text(scanner.formattedTotalSize)
-                            .font(.system(size: 48, weight: .light))
-                            .foregroundColor(.white) // Cyan color usually, but keeping white for now matching image text style mostly
-                        
-                        Text(loc.L("smart_select"))
-                            .font(.caption)
-                            .foregroundColor(.secondaryText)
-                    }
-                    
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(loc.L("including"))
-                            .font(.caption)
-                            .foregroundColor(.secondaryText)
-                        
-                        HStack(spacing: 6) {
-                            Circle()
-                                .fill(Color.secondaryText)
-                                .frame(width: 4, height: 4)
-                            Text(loc.L("trash_on_mac"))
-                                .font(.body)
-                                .foregroundColor(.secondaryText)
-                        }
-                    }
-                    .padding(.top, 10)
-                    
-                    // 查看项目按钮
-                    NavigationLink(destination: TrashDetailsSplitView(scanner: scanner)) {
-                        HStack {
-                            Text(loc.L("view_items"))
-                            Text(loc.currentLanguage == .chinese ? "共发现 \(scanner.formattedTotalSize)" : "Found \(scanner.formattedTotalSize)")
-                                .foregroundColor(.secondaryText)
-                        }
-                        .padding(.vertical, 8)
-                        .padding(.horizontal, 16)
-                        .background(Color.white.opacity(0.1))
-                        .cornerRadius(6)
-                    }
-                    .buttonStyle(.plain)
-                    .padding(.top, 20)
-                }
-            }
-            
-            Spacer()
-            
-            // 清理按钮
-             CircularActionButton(
-                 title: loc.L("empty_trash"),
-                 gradient: CircularActionButton.blueGradient,
-                 action: {
-                     if scanner.items.isEmpty {
-                         scanner.reset()
-                     } else {
-                         // 确认删除? 用户想跟图一样，图中有个大按钮在下面
-                         showEmptyConfirmation = true
-                     }
                  }
              )
              .padding(.bottom, 60)
@@ -1001,5 +1079,47 @@ struct TrashItemRow: View {
         .padding(12)
         .background(Color.white.opacity(0.05))
         .cornerRadius(10)
+    }
+}
+
+// MARK: - Teal Mesh Background (Trash Theme)
+struct TealMeshBackground: View {
+    var body: some View {
+        ZStack {
+            // 1. Teal/Green Gradient Base
+            LinearGradient(
+                colors: [
+                    Color(hex: "009688"), // Teal Green
+                    Color(hex: "2c3e50")  // Deep Blue/Grey
+                ],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+            
+            // 2. Soft Overlays
+            GeometryReader { proxy in
+                ZStack {
+                    // Top-Left Bright Green Glow
+                    Circle()
+                        .fill(Color(hex: "00F260").opacity(0.3))
+                        .frame(width: 800, height: 800)
+                        .blur(radius: 100)
+                        .offset(x: -200, y: -200)
+                    
+                    // Bottom-Right Deep Blue Shadow
+                    Circle()
+                        .fill(Color(hex: "0575E6").opacity(0.5))
+                        .frame(width: 900, height: 900)
+                        .blur(radius: 120)
+                        .offset(x: 200, y: 300)
+                }
+            }
+            
+            // 3. Subtle Noise/Texture
+             Rectangle()
+                .fill(Color.white.opacity(0.03))
+                .blendMode(.overlay)
+        }
+        .ignoresSafeArea()
     }
 }
