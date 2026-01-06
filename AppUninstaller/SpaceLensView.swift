@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import AVFoundation
 
 struct SpaceLensView: View {
     @StateObject private var scanner = SpaceLensScanner()
@@ -20,6 +21,9 @@ struct SpaceLensView: View {
     @State private var itemsToRemove: [FileNode] = []
     
     @ObservedObject private var loc = LocalizationManager.shared
+    
+    // Audio
+    @State private var audioPlayer: AVAudioPlayer?
     
     // Selection Stats
     @State private var showSelectedItemsPopover = false
@@ -54,6 +58,7 @@ struct SpaceLensView: View {
             HStack(spacing: 0) {
                 // Left Column: Text & Features
                 VStack(alignment: .leading, spacing: 40) {
+                    Spacer() // Push content down to align with bottom center button area
                     
                     VStack(alignment: .leading, spacing: 16) {
                         Text(loc.currentLanguage == .chinese ? "空间透镜" : "Space Lens")
@@ -79,7 +84,8 @@ struct SpaceLensView: View {
                     // Disk Selector Card
                     diskSelectorCard
                     
-                    Spacer() // Push up
+                    Spacer()
+                        .frame(height: 100) // Space from bottom
                 }
                 .padding(.leading, 60)
                 .padding(.trailing, 20)
@@ -289,11 +295,36 @@ struct SpaceLensView: View {
                 if let root = newNode {
                     self.currentNode = root
                     self.calculateLayout(for: root)
-                    withAnimation {
-                        self.viewState = 2
+                    
+                    // Play sound and wait before showing results
+                    playScanCompleteSound {
+                        withAnimation {
+                            self.viewState = 2
+                        }
                     }
                 }
             }
+        }
+    }
+    
+    func playScanCompleteSound(completion: @escaping () -> Void) {
+        guard let soundURL = Bundle.main.url(forResource: "CleanDidFinish", withExtension: "m4a") else {
+            completion()
+            return
+        }
+        
+        do {
+            audioPlayer = try AVAudioPlayer(contentsOf: soundURL)
+            audioPlayer?.play()
+            
+            // Wait for duration
+            let duration = audioPlayer?.duration ?? 0
+            DispatchQueue.main.asyncAfter(deadline: .now() + duration) {
+                completion()
+            }
+        } catch {
+            print("Failed to play sound: \(error)")
+            completion()
         }
     }
     
@@ -692,6 +723,11 @@ struct SpaceLensView: View {
         // Dismiss
         showRemoveConfirmation = false
         itemsToRemove = []
+        
+        // Play success sound
+        playScanCompleteSound {
+            // Optional: Show success toast or animation?
+        }
     }
 }
 

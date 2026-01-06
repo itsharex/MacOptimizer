@@ -210,12 +210,12 @@ struct SmartCleanerView: View {
             // 核心图标区域 - 匹配设计图（无圆圈光晕）
             ZStack {
                 // 显示器主图标 - 使用自定义图片
-                if let imagePath = Bundle.main.path(forResource: "resubscribe_welcome", ofType: "png"),
+                if let imagePath = Bundle.main.path(forResource: "resubscribe_welcome@2x", ofType: "png"),
                    let nsImage = NSImage(contentsOfFile: imagePath) {
                     Image(nsImage: nsImage)
                         .resizable()
                         .aspectRatio(contentMode: .fit)
-                        .frame(width: 260, height: 260)
+                        .frame(width: 360, height: 360)
                         .shadow(color: Color.pink.opacity(0.2), radius: 20, x: 0, y: 8)
                 } else {
                     // 备用：使用应用图标
