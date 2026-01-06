@@ -74,7 +74,8 @@ class AppUpdaterService: ObservableObject {
             for app in installedApps {
                 guard let bundleId = app.bundleIdentifier, !bundleId.isEmpty else {
                     processed += 1
-                    await MainActor.run { self.progress = processed / total }
+                    let currentProcessed = processed
+                    await MainActor.run { self.progress = currentProcessed / total }
                     continue
                 }
                 
@@ -86,12 +87,16 @@ class AppUpdaterService: ObservableObject {
             
             for await update in group {
                 processed += 1
-                await MainActor.run { self.progress = processed / total }
+                let currentProcessed = processed
+                await MainActor.run { self.progress = currentProcessed / total }
                 if let update = update {
                     foundUpdates.append(update)
                 }
             }
         }
+        
+
+
         
         // If no real updates found, keep some mock data for DEMO if needed, OR just show empty.
         // Given user request "Get my app's icon", I will prioritize REAL updates.
@@ -135,8 +140,9 @@ class AppUpdaterService: ObservableObject {
             }
         }
         
+        let finalUpdates = foundUpdates
         await MainActor.run {
-            self.updates = foundUpdates
+            self.updates = finalUpdates
             self.isScanning = false
             self.scanComplete = true
             self.progress = 1.0

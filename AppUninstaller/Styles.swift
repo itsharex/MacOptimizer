@@ -138,6 +138,16 @@ struct GradientStyles {
         startPoint: .topLeading,
         endPoint: .bottomTrailing
     )
+    
+    // 15. 空间透镜 (青绿/深海绿渐变)
+    static let spaceLens = LinearGradient(
+        stops: [
+            .init(color: Color(hex: "00C9A7"), location: 0.0), // Bright Teal
+            .init(color: Color(hex: "005E7C"), location: 1.0)  // Deep Sea Blue
+        ],
+        startPoint: .topLeading,
+        endPoint: .bottomTrailing
+    )
 
     // 13. 更新程序 (蓝绿/青色渐变 - 匹配 CleanMyMac 更新风格)
     static let updater = LinearGradient(
@@ -170,6 +180,7 @@ struct GradientStyles {
         case .malware: return LinearGradient(colors: [Color(hex: "FF6B6B"), Color(hex: "FF8E53")], startPoint: .topLeading, endPoint: .bottomTrailing)
         case .smartClean: return smartClean
         case .updater: return updater
+        case .spaceLens: return spaceLens
         }
     }
 
@@ -267,6 +278,18 @@ struct BackgroundStyles {
         startPoint: .topLeading,
         endPoint: .bottomTrailing
     )
+    
+    // 15. 空间透镜 (与设计图一致的深青/深海绿背景)
+    static let spaceLens = LinearGradient(
+        stops: [
+            .init(color: Color(hex: "00A896"), location: 0.0), // Teal
+            .init(color: Color(hex: "051937"), location: 1.0)  // Dark Blue Black
+        ],
+        startPoint: .topLeading,
+        endPoint: .bottomTrailing
+    )
+    
+
 
     // 14. 更新程序 (青色/蓝绿渐变背景)
     static let updater = LinearGradient(
@@ -361,18 +384,17 @@ enum AppModule: String, CaseIterable, Identifiable {
     case smartClean = "智能扫描"
     case cleaner = "系统垃圾"
     case deepClean = "深度清理"
-    case maintenance = "系统维护" // Renamed from optimizer, maps to "Maintenance" UI
-    case optimizer = "系统优化"   // New module for "Optimization" UI
-    case shredder = "碎纸机"      // New module for "Shredder"
+    case maintenance = "系统维护"
+    case optimizer = "系统优化"
+    case shredder = "碎纸机"
     case privacy = "隐私保护"
     case largeFiles = "大文件查找"
+    case fileExplorer = "文件管理" // Renamed from Space Lens
+    case spaceLens = "空间透镜"     // New Space Lens
     case uninstaller = "应用卸载"
-    case updater = "更新程序"    // New Updater Module
+    case updater = "更新程序"
     case trash = "废纸篓"
     case malware = "移除恶意软件"
-    case fileExplorer = "文件管理"
-    
-    
     
     var id: String { rawValue }
     
@@ -387,9 +409,10 @@ enum AppModule: String, CaseIterable, Identifiable {
         case .optimizer: return "bolt.fill"
         case .shredder: return "doc.text.fill"
         case .largeFiles: return "doc"
-        case .fileExplorer: return "circle.hexagongrid"
+        case .fileExplorer: return "folder" // Changed icon for File Management
+        case .spaceLens: return "circle.hexagongrid" // Space Lens icon
         case .trash: return "trash"
-        case .malware: return "exclamationmark.shield.fill" // Fallback if image not used in menu
+        case .malware: return "exclamationmark.shield.fill"
         case .privacy: return "hand.raised.fill"
         case .smartClean: return "display"
         }
@@ -406,6 +429,7 @@ enum AppModule: String, CaseIterable, Identifiable {
         case .shredder: return GradientStyles.shredder
         case .largeFiles: return GradientStyles.largeFiles
         case .fileExplorer: return GradientStyles.fileExplorer
+        case .spaceLens: return GradientStyles.spaceLens // New Gradient
         case .trash: return GradientStyles.trash
         case .malware: return LinearGradient(colors: [Color(hex: "FF6B6B"), Color(hex: "FF8E53")], startPoint: .topLeading, endPoint: .bottomTrailing)
         case .privacy:
@@ -426,10 +450,11 @@ enum AppModule: String, CaseIterable, Identifiable {
         case .shredder: return BackgroundStyles.shredder
         case .largeFiles: return BackgroundStyles.largeFiles
         case .fileExplorer: return BackgroundStyles.fileExplorer
+        case .spaceLens: return BackgroundStyles.spaceLens // New Background
         case .trash: return BackgroundStyles.trash
         case .malware: return LinearGradient(stops: [
-            .init(color: Color(hex: "E05E5E"), location: 0.0), // Reddish
-            .init(color: Color(hex: "3F2E56"), location: 1.0)  // Dark Purple
+            .init(color: Color(hex: "E05E5E"), location: 0.0),
+            .init(color: Color(hex: "3F2E56"), location: 1.0)
         ], startPoint: .topLeading, endPoint: .bottomTrailing)
         case .privacy: return BackgroundStyles.privacy
         case .smartClean: return BackgroundStyles.smartClean
@@ -447,7 +472,8 @@ enum AppModule: String, CaseIterable, Identifiable {
         case .optimizer: return "管理启动项，释放内存"
         case .shredder: return "安全擦除敏感文件"
         case .largeFiles: return "发现并清理占用空间的大文件"
-        case .fileExplorer: return "浏览和管理磁盘文件"
+        case .fileExplorer: return "浏览和管理磁盘文件" // Updated description
+        case .spaceLens: return "对文件夹和文件进行视觉大小比较，方便快速清理。"
         case .trash: return "查看并清空废纸篷"
         case .malware: return "移除恶意软件"
         case .privacy: return "保护您的隐私数据安全"

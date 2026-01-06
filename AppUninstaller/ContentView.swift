@@ -66,6 +66,9 @@ struct ContentView: View {
                         case .fileExplorer:
                             FileExplorerView()
                                 .transition(.opacity.combined(with: .move(edge: .trailing)))
+                        case .spaceLens:
+                            SpaceLensView()
+                                .transition(.opacity.combined(with: .move(edge: .trailing)))
                         case .trash:
                             TrashView()
                                 .transition(.opacity.combined(with: .move(edge: .trailing)))

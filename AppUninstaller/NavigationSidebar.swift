@@ -33,7 +33,7 @@ enum SidebarSection: String, CaseIterable {
         case .apps:
             return [.uninstaller, .updater]
         case .files:
-            return [.fileExplorer, .largeFiles, .shredder]
+            return [.fileExplorer, .spaceLens, .largeFiles, .shredder]
         }
     }
 }
@@ -225,7 +225,8 @@ struct SidebarMenuItem: View {
         case .optimizer: return localization.currentLanguage == .chinese ? "优化" : "Optimization"
         case .shredder: return localization.currentLanguage == .chinese ? "碎纸机" : "Shredder"
         case .largeFiles: return localization.currentLanguage == .chinese ? "大型和旧文件" : "Large & Old Files"
-        case .fileExplorer: return localization.currentLanguage == .chinese ? "空间透镜" : "Space Lens"
+        case .fileExplorer: return localization.currentLanguage == .chinese ? "文件管理" : "File Management"
+        case .spaceLens: return localization.currentLanguage == .chinese ? "空间透镜" : "Space Lens"
         case .trash: return localization.currentLanguage == .chinese ? "废纸篓" : "Trash Bins"
         case .privacy: return localization.currentLanguage == .chinese ? "隐私" : "Privacy"
         case .malware: return localization.currentLanguage == .chinese ? "移除恶意软件" : "Malware Removal"

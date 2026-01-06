@@ -8,7 +8,7 @@ struct AppUninstallerApp: App {
     var body: some Scene {
         WindowGroup {
             ContentView()
-                .frame(minWidth: 900, minHeight: 600)
+                .frame(minWidth: 1100, minHeight: 750)
                 .preferredColorScheme(.dark)
                 .task {
                     await UpdateCheckerService.shared.checkForUpdates()
