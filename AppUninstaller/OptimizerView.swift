@@ -704,7 +704,7 @@ class OptimizerService: ObservableObject {
         // 3. 重建 Launch Services 数据库
         let lsregister = Process()
         lsregister.executableURL = URL(fileURLWithPath: "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/LaunchServices.framework/Versions/A/Support/lsregister")
-        lsregister.arguments = ["-kill", "-r", "-domain", "local", "-domain", "system", "-domain", "user"]
+        lsregister.arguments = ["-kill", "-r", "-domain", "local", "-domain", "user"]
         try? lsregister.run()
         lsregister.waitUntilExit()
         

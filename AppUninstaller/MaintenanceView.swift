@@ -622,13 +622,8 @@ class MaintenanceService: ObservableObject {
         chmodHome.waitUntilExit()
         if chmodHome.terminationStatus == 0 { fixedCount += 1 }
         
-        // 修复 Library 目录权限
-        let chmodLib = Process()
-        chmodLib.executableURL = URL(fileURLWithPath: "/bin/chmod")
-        chmodLib.arguments = ["-R", "u+rwX", "\(homePath)/Library"]
-        try? chmodLib.run()
-        chmodLib.waitUntilExit()
-        if chmodLib.terminationStatus == 0 { fixedCount += 1 }
+        // REMOVED: Recursive permission repair on Library is dangerous and can break system settings
+        // let chmodLib = Process() ...
         
         // 修复常用目录权限
         let userDirs = ["Desktop", "Documents", "Downloads", "Pictures", "Movies", "Music"]
@@ -1144,54 +1139,69 @@ struct MaintenanceView: View {
                 .foregroundColor(.white.opacity(0.7))
                 .padding(.bottom, 30)
             
-            // 详细结果列表
-            ScrollView {
-                VStack(spacing: 10) {
+            ScrollView(showsIndicators: false) {
+                LazyVStack(spacing: 12) {
                     ForEach(service.taskResults, id: \.task.rawValue) { result in
-                        HStack(spacing: 12) {
-                            // 状态图标
+                        HStack(spacing: 16) {
+                            // Status Icon
                             ZStack {
-                                RoundedRectangle(cornerRadius: 5)
-                                    .fill(result.task.iconColor)
-                                    .frame(width: 32, height: 32)
+                                RoundedRectangle(cornerRadius: 10)
+                                    .fill(result.task.iconColor.opacity(0.2))
+                                    .frame(width: 40, height: 40)
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 10)
+                                            .stroke(result.task.iconColor.opacity(0.5), lineWidth: 1)
+                                    )
                                 
                                 Image(systemName: result.task.icon)
-                                    .font(.system(size: 14))
-                                    .foregroundColor(.white)
+                                    .font(.system(size: 18))
+                                    .foregroundColor(result.task.iconColor)
                             }
                             
-                            // 任务信息
-                            VStack(alignment: .leading, spacing: 3) {
+                            // Task Info
+                            VStack(alignment: .leading, spacing: 4) {
                                 HStack {
                                     Text(loc.currentLanguage == .chinese ? result.task.title : result.task.englishTitle)
-                                        .font(.system(size: 13, weight: .medium))
+                                        .font(.system(size: 14, weight: .semibold))
                                         .foregroundColor(.white)
                                     
                                     Spacer()
                                     
-                                    // 成功/失败状态
+                                    // Status Badge
                                     HStack(spacing: 4) {
-                                        Image(systemName: result.success ? "checkmark.circle.fill" : "xmark.circle.fill")
-                                            .foregroundColor(result.success ? .green : .red)
+                                        Image(systemName: result.success ? "checkmark.circle.fill" : "exclamationmark.circle.fill")
+                                            .foregroundColor(result.success ? .green : .orange)
                                             .font(.system(size: 12))
                                         
                                         Text(result.message)
-                                            .font(.system(size: 11))
-                                            .foregroundColor(result.success ? .green : .red)
+                                            .font(.system(size: 11, weight: .medium))
+                                            .foregroundColor(result.success ? .green : .orange)
                                     }
+                                    .padding(.horizontal, 8)
+                                    .padding(.vertical, 4)
+                                    .background(
+                                        Capsule()
+                                            .fill(result.success ? Color.green.opacity(0.1) : Color.orange.opacity(0.1))
+                                    )
                                 }
                                 
                                 if let details = result.details {
                                     Text(details)
-                                        .font(.system(size: 11))
+                                        .font(.system(size: 12))
                                         .foregroundColor(.white.opacity(0.6))
-                                        .lineLimit(2)
+                                        .lineLimit(1)
                                 }
                             }
                         }
-                        .padding(12)
-                        .background(Color.white.opacity(0.08))
-                        .cornerRadius(8)
+                        .padding(16)
+                        .background(
+                            RoundedRectangle(cornerRadius: 12)
+                                .fill(Color.white.opacity(0.05))
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 12)
+                                .stroke(Color.white.opacity(0.05), lineWidth: 1)
+                        )
                     }
                 }
                 .padding(.horizontal, 40)
@@ -1216,7 +1226,8 @@ struct MaintenanceView: View {
             .buttonStyle(.plain)
             .padding(.bottom, 50)
         }
-        .background(BackgroundStyles.privacy)
+
+        // Removed .background to avoid double background layer
     }
     // MARK: - Landing View
     var landingView: some View {
@@ -1408,15 +1419,16 @@ struct MaintenanceConfirmDialog: View {
                             .foregroundColor(.orange)
                             .font(.system(size: 20))
                         
+                            
                         Text(loc.currentLanguage == .chinese ? "确认操作" : "Confirm Action")
                             .font(.system(size: 18, weight: .bold))
-                            .foregroundColor(.primary)
+                            .foregroundColor(.white)
                     }
                     
                     if let task = service.confirmDialogTask {
                         Text(loc.currentLanguage == .chinese ? task.title : task.englishTitle)
                             .font(.system(size: 14, weight: .medium))
-                            .foregroundColor(.secondary)
+                            .foregroundColor(.white.opacity(0.7))
                     }
                 }
                 
@@ -1426,9 +1438,12 @@ struct MaintenanceConfirmDialog: View {
                     service.cancelAction()
                     dismiss()
                 }) {
-                    Image(systemName: "xmark.circle.fill")
-                        .font(.system(size: 20))
-                        .foregroundColor(.secondary)
+                    Image(systemName: "xmark")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundColor(.white.opacity(0.5))
+                        .padding(8)
+                        .background(Color.white.opacity(0.1))
+                        .clipShape(Circle())
                 }
                 .buttonStyle(.plain)
             }
@@ -1436,7 +1451,10 @@ struct MaintenanceConfirmDialog: View {
             .padding(.top, 24)
             .padding(.bottom, 16)
             
+            .padding(.bottom, 16)
+            
             Divider()
+                .background(Color.white.opacity(0.1))
             
             // Warning Banner
             HStack(spacing: 12) {
@@ -1446,21 +1464,23 @@ struct MaintenanceConfirmDialog: View {
                 
                 Text(service.confirmDialogMessage)
                     .font(.system(size: 13))
-                    .foregroundColor(.primary)
+                    .foregroundColor(.white.opacity(0.9))
                     .fixedSize(horizontal: false, vertical: true)
                 
                 Spacer()
             }
             .padding(.horizontal, 24)
             .padding(.vertical, 16)
-            .background(Color.orange.opacity(0.1))
+            .padding(.horizontal, 24)
+            .padding(.vertical, 16)
+            .background(Color(red: 1.0, green: 0.6, blue: 0.0).opacity(0.15)) // Modern orange tint
             
             // Task Details
             VStack(alignment: .leading, spacing: 12) {
                 if let task = service.confirmDialogTask {
                     Text(loc.currentLanguage == .chinese ? "将要执行的操作：" : "Operations to perform:")
                         .font(.system(size: 13, weight: .semibold))
-                        .foregroundColor(.primary)
+                        .foregroundColor(.white)
                     
                     VStack(alignment: .leading, spacing: 8) {
                         ForEach(getTaskOperations(task), id: \.self) { operation in
@@ -1469,7 +1489,7 @@ struct MaintenanceConfirmDialog: View {
                                     .foregroundColor(.secondary)
                                 Text(operation)
                                     .font(.system(size: 12))
-                                    .foregroundColor(.secondary)
+                                    .foregroundColor(.white.opacity(0.7))
                             }
                         }
                     }
@@ -1479,6 +1499,7 @@ struct MaintenanceConfirmDialog: View {
             .padding(.vertical, 16)
             
             Divider()
+                .background(Color.white.opacity(0.1))
             
             // Footer Actions
             HStack(spacing: 12) {
@@ -1491,10 +1512,10 @@ struct MaintenanceConfirmDialog: View {
                 }) {
                     Text(loc.currentLanguage == .chinese ? "取消" : "Cancel")
                         .font(.system(size: 13, weight: .medium))
-                        .foregroundColor(.secondary)
+                        .foregroundColor(.white.opacity(0.8))
                         .padding(.horizontal, 20)
                         .padding(.vertical, 8)
-                        .background(Color.gray.opacity(0.1))
+                        .background(Color.white.opacity(0.1))
                         .cornerRadius(8)
                 }
                 .buttonStyle(.plain)
@@ -1508,8 +1529,15 @@ struct MaintenanceConfirmDialog: View {
                         .font(.system(size: 13, weight: .medium))
                         .foregroundColor(.white)
                         .padding(.horizontal, 20)
+                        .padding(.horizontal, 20)
                         .padding(.vertical, 8)
-                        .background(Color.orange)
+                        .background(
+                            LinearGradient(
+                                colors: [Color.orange, Color(red: 0.8, green: 0.4, blue: 0.0)],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
                         .cornerRadius(8)
                 }
                 .buttonStyle(.plain)
@@ -1517,8 +1545,16 @@ struct MaintenanceConfirmDialog: View {
             .padding(.horizontal, 24)
             .padding(.vertical, 16)
         }
-        .frame(width: 480)
-        .background(Color(NSColor.windowBackgroundColor))
+        .frame(width: 460)
+        .background(
+            RoundedRectangle(cornerRadius: 16)
+                .fill(Color(red: 0.15, green: 0.15, blue: 0.22)) // Darker modern background
+                .shadow(color: Color.black.opacity(0.4), radius: 20, x: 0, y: 10)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 16)
+                .stroke(Color.white.opacity(0.1), lineWidth: 1)
+        )
     }
     
     // 获取任务的具体操作列表

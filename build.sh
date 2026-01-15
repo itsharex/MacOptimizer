@@ -53,19 +53,8 @@ cp "${SOURCE_DIR}/Info.plist" "${BUILD_DIR}/${BUNDLE_NAME}/Contents/"
 if [ -f "${SOURCE_DIR}/AppIcon.icns" ]; then
     cp "${SOURCE_DIR}/AppIcon.icns" "${BUILD_DIR}/${BUNDLE_NAME}/Contents/Resources/"
     echo -e "${GREEN}✓ AppIcon.icns 已复制${NC}"
-elif [ -f "${SOURCE_DIR}/Application.icns" ]; then
-    # Use Application.icns as the main AppIcon if AppIcon.icns is missing
-    cp "${SOURCE_DIR}/Application.icns" "${BUILD_DIR}/${BUNDLE_NAME}/Contents/Resources/AppIcon.icns"
-    echo -e "${GREEN}✓ Application.icns 已复制为 AppIcon.icns${NC}"
 else
-    echo -e "${YELLOW}⚠ 警告: 未找到图标文件 (AppIcon.icns 或 Application.icns)${NC}"
-fi
-
-# Also ensure Application.icns is available for the status bar item
-if [ -f "${SOURCE_DIR}/Application.icns" ]; then
-    # Avoid overwriting if it was just copied above? No, cp -n or just copy again is fine/safer.
-    cp "${SOURCE_DIR}/Application.icns" "${BUILD_DIR}/${BUNDLE_NAME}/Contents/Resources/Application.icns"
-    echo -e "${GREEN}✓ Application.icns 已复制 (用于菜单栏)${NC}"
+    echo -e "${YELLOW}⚠ 警告: 未找到图标文件 AppIcon.icns${NC}"
 fi
 
 # 复制 PNG 图片资源

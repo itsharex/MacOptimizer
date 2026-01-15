@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Mac优化大师 4.0.3 - 双架构 DMG 打包脚本
+# Mac优化大师 4.0.5 - 双架构 DMG 打包脚本
 # 构建 Apple Silicon 和 Intel 版本的 DMG
 
 set -e
@@ -13,7 +13,7 @@ BLUE='\033[0;34m'
 NC='\033[0m'
 
 echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-echo -e "${BLUE}    Mac优化大师 v4.0.3 双架构打包脚本${NC}"
+echo -e "${BLUE}    Mac优化大师 v4.0.5 双架构打包脚本${NC}"
 echo -e "${BLUE}    Apple Silicon + Intel DMG Generator${NC}"
 echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo ""
@@ -24,7 +24,7 @@ EXECUTABLE_NAME="AppUninstaller"
 BUNDLE_NAME="${APP_NAME}.app"
 BUILD_DIR="build_release"
 SOURCE_DIR="AppUninstaller"
-VERSION="4.0.3"
+VERSION="4.0.5"
 
 # DMG 文件名
 DMG_ARM64="${APP_NAME}_v${VERSION}_AppleSilicon.dmg"
@@ -78,15 +78,8 @@ build_architecture() {
     if [ -f "${SOURCE_DIR}/AppIcon.icns" ]; then
         cp "${SOURCE_DIR}/AppIcon.icns" "${APP_DIR}/Contents/Resources/"
         echo -e "${GREEN}  ✓ AppIcon.icns 已复制${NC}"
-    elif [ -f "${SOURCE_DIR}/Application.icns" ]; then
-        cp "${SOURCE_DIR}/Application.icns" "${APP_DIR}/Contents/Resources/AppIcon.icns"
-        echo -e "${GREEN}  ✓ Application.icns 已复制为 AppIcon.icns${NC}"
-    fi
-    
-    # 复制 Application.icns (菜单栏图标)
-    if [ -f "${SOURCE_DIR}/Application.icns" ]; then
-        cp "${SOURCE_DIR}/Application.icns" "${APP_DIR}/Contents/Resources/Application.icns"
-        echo -e "${GREEN}  ✓ Application.icns 已复制 (用于菜单栏)${NC}"
+    else
+        echo -e "${YELLOW}  ⚠ 警告: 未找到图标文件 AppIcon.icns${NC}"
     fi
     
     # 复制 PNG 图片

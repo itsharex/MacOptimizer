@@ -33,11 +33,16 @@ class MemoryAlertWindowController: NSObject, ObservableObject {
     
     /// 显示内存警告窗口
     private func showAlert() {
-        // 如果窗口已存在，直接显示
+        // 如果窗口已存在，重新定位并显示
         if let existingWindow = window {
-            existingWindow.makeKeyAndOrderFront(nil)
+            positionWindow(existingWindow)
+            existingWindow.orderFrontRegardless()
             return
         }
+        
+        // 每次显示前都重新获取按钮引用（确保最新）
+        statusBarButton = MenuBarManager.shared.statusItem?.button
+        print("[MemoryAlert] 获取菜单栏按钮: \(statusBarButton != nil ? "成功" : "失败")")
         
         // 创建警告视图
         let alertView = MemoryAlertFloatingView(
@@ -69,13 +74,16 @@ class MemoryAlertWindowController: NSObject, ObservableObject {
         alertWindow.collectionBehavior = [.canJoinAllSpaces, .stationary]
         alertWindow.isMovableByWindowBackground = false
         
+        // 重要：设置为非激活窗口，避免 canBecomeKeyWindow 警告
+        alertWindow.hidesOnDeactivate = false
+        alertWindow.ignoresMouseEvents = false
+        
         // 定位在菜单栏图标下方
         positionWindow(alertWindow)
         
-        // 动画显示
+        // 动画显示（不成为 key window，避免警告）
         alertWindow.alphaValue = 0
-        alertWindow.makeKeyAndOrderFront(nil)
-        NSApp.activate(ignoringOtherApps: true)
+        alertWindow.orderFrontRegardless()  // 使用 orderFrontRegardless 替代 makeKeyAndOrderFront
         
         NSAnimationContext.runAnimationGroup { context in
             context.duration = 0.3
@@ -101,35 +109,91 @@ class MemoryAlertWindowController: NSObject, ObservableObject {
     
     /// 计算窗口位置（菜单栏图标正下方）
     private func positionWindow(_ window: NSWindow) {
-        guard let button = statusBarButton ?? MenuBarManager.shared.statusItem?.button,
-              let buttonWindow = button.window,
-              let screen = NSScreen.main else {
-            // 默认位置：右上角
-            if let screen = NSScreen.main {
-                let screenFrame = screen.visibleFrame
-                let windowSize = window.frame.size
-                let xPos = screenFrame.maxX - windowSize.width - 20
-                let yPos = screenFrame.maxY - windowSize.height - 10
-                window.setFrameOrigin(NSPoint(x: xPos, y: yPos))
+        guard let screen = NSScreen.main else { return }
+        
+        let screenFrame = screen.visibleFrame
+        let fullScreenFrame = screen.frame  // 包含菜单栏的完整屏幕
+        
+        // 使用固定的窗口尺寸（与创建时一致），避免 SwiftUI 布局延迟导致的 size=0 问题
+        let windowSize = CGSize(width: 320, height: 280)
+        let menuBarHeight: CGFloat = 24  // macOS 菜单栏高度
+        
+        print("[MemoryAlert] 屏幕信息 - visible: \(screenFrame), full: \(fullScreenFrame)")
+        print("[MemoryAlert] 窗口尺寸 - frame.size: \(window.frame.size), fixed: \(windowSize)")
+        
+        // 尝试获取菜单栏按钮
+        if let button = statusBarButton ?? MenuBarManager.shared.statusItem?.button {
+            var buttonScreenX: CGFloat?
+            
+            // 方法1: 通过 button.window 转换坐标
+            if let buttonWindow = button.window {
+                let buttonFrameInWindow = button.frame
+                let buttonFrameScreen = buttonWindow.convertToScreen(buttonFrameInWindow)
+                print("[MemoryAlert] 方法1原始数据: window frame=\(buttonFrameInWindow), screen frame=\(buttonFrameScreen)")
+                
+                // 检查坐标是否合理（菜单栏图标应该在屏幕上半部分）
+                if buttonFrameScreen.minY > screenFrame.midY || buttonFrameScreen.minX < 10 {
+                    print("[MemoryAlert] ⚠️ 方法1坐标异常，x=\(buttonFrameScreen.minX), y=\(buttonFrameScreen.minY)")
+                    // 坐标不合理，尝试其他方法
+                } else {
+                    buttonScreenX = buttonFrameScreen.midX
+                    print("[MemoryAlert] ✅ 方法1成功: buttonScreenX=\(buttonScreenX!)")
+                }
             }
-            return
+            
+            // 方法2: 如果方法1失败，使用鼠标位置推算（当用户点击图标时）
+            if buttonScreenX == nil {
+                let mouseLocation = NSEvent.mouseLocation
+                print("[MemoryAlert] 方法2: 尝试使用鼠标位置=\(mouseLocation)")
+                
+                // 如果鼠标在屏幕顶部菜单栏区域，说明可能刚点击了图标
+                if mouseLocation.y > fullScreenFrame.maxY - menuBarHeight - 5 {
+                    buttonScreenX = mouseLocation.x
+                    print("[MemoryAlert] ✅ 方法2成功: 使用鼠标位置 x=\(buttonScreenX!)")
+                }
+            }
+            
+            // 方法3: 使用 StatusItem 的长度信息推算位置
+            if buttonScreenX == nil {
+                // 菜单栏图标通常从右向左排列
+                // 我们假设图标在右上角区域
+                if MenuBarManager.shared.statusItem != nil {
+                    // 从右边缘开始估算（假设是第一个或第二个图标）
+                    let estimatedX = fullScreenFrame.maxX - 50  // 右边缘 -50px 作为估算
+                    buttonScreenX = estimatedX
+                    print("[MemoryAlert] 方法3: 使用估算位置 x=\(buttonScreenX!)")
+                }
+            }
+            
+            // 如果获取到了 X 坐标，计算窗口位置
+            if let buttonX = buttonScreenX {
+                let xPos = buttonX - (windowSize.width / 2)
+                
+                // Y 坐标：在可见区域顶部向下偏移
+                // screenFrame.maxY 是可见区域的顶部（菜单栏下方）
+                let yPos = screenFrame.maxY - windowSize.height - 8
+                
+                // 确保不超出屏幕边界
+                let finalX = max(screenFrame.minX + 10, min(xPos, screenFrame.maxX - windowSize.width - 10))
+                let finalY = max(screenFrame.minY + 10, min(yPos, screenFrame.maxY - windowSize.height - 8))
+                
+                // 同时设置窗口大小和位置，确保窗口尺寸正确
+                window.setFrame(NSRect(x: finalX, y: finalY, width: windowSize.width, height: windowSize.height), display: true)
+                print("[MemoryAlert] ✅ 窗口定位成功: x=\(finalX), y=\(finalY), buttonX=\(buttonX)")
+                print("[MemoryAlert] 坐标详情: screenFrame.maxY=\(screenFrame.maxY), windowHeight=\(windowSize.height), actualHeight=\(window.frame.height)")
+                return
+            }
         }
         
-        // 获取菜单栏按钮的屏幕坐标
-        let buttonFrame = buttonWindow.convertToScreen(button.frame)
-        let screenFrame = screen.visibleFrame
-        let windowSize = window.frame.size
+        // 方法4: 终极后备方案 - 使用屏幕右上角
+        print("[MemoryAlert] ⚠️ 使用终极后备方案")
+        let xPos = screenFrame.maxX - windowSize.width - 20
+        // 使用可见区域的顶部，确保在菜单栏下方
+        let yPos = screenFrame.maxY - windowSize.height - 8
         
-        // 计算窗口位置：在按钮正下方居中
-        // buttonFrame.minY 是按钮的底部（屏幕坐标系）
-        let xPos = buttonFrame.midX - (windowSize.width / 2)
-        let yPos = buttonFrame.minY - windowSize.height - 8  // 8px 间距
-        
-        // 确保不超出屏幕边界
-        let finalX = max(screenFrame.minX + 10, min(xPos, screenFrame.maxX - windowSize.width - 10))
-        let finalY = max(screenFrame.minY + 10, yPos)
-        
-        window.setFrameOrigin(NSPoint(x: finalX, y: finalY))
+        // 同时设置窗口大小和位置
+        window.setFrame(NSRect(x: xPos, y: yPos, width: windowSize.width, height: windowSize.height), display: true)
+        print("[MemoryAlert] 使用后备位置: x=\(xPos), y=\(yPos), screenFrame.maxY=\(screenFrame.maxY), windowHeight=\(windowSize.height)")
     }
 }
 
