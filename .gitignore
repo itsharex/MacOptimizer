@@ -6,6 +6,11 @@ build_release/
 *.xcuserstate
 *.xcuserdata
 *.swp
+*.md
+*.cursor
+*.agent
+*.shared
+*.swiftpm
 
 # Build artifacts
 *.app

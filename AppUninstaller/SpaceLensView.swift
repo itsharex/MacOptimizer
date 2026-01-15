@@ -81,88 +81,135 @@ struct SpaceLensView: View {
     
     // MARK: - Landing View
     var landingView: some View {
-        ZStack(alignment: .bottom) {
-            HStack(spacing: 0) {
-                // Left Column: Text & Features
-                VStack(alignment: .leading, spacing: 40) {
-                    Spacer() // Push content down to align with bottom center button area
-                    
-                    VStack(alignment: .leading, spacing: 16) {
+        ZStack {
+            HStack(spacing: 60) {
+                // Left Content
+                VStack(alignment: .leading, spacing: 30) {
+                    // Branding Header
+                    HStack(spacing: 8) {
                         Text(loc.currentLanguage == .chinese ? "空间透镜" : "Space Lens")
-                            .font(.system(size: 32, weight: .bold))
+                            .font(.system(size: 16, weight: .medium))
                             .foregroundColor(.white)
                         
-                        Text(loc.currentLanguage == .chinese ? "对文件夹和文件进行视觉大小比较，方便快速清理。" : "Visually compare folders and files for quick cleanup.")
-                            .font(.system(size: 14))
-                            .foregroundColor(.white.opacity(0.8))
-                            .lineLimit(2)
-                            .fixedSize(horizontal: false, vertical: true)
+                        // Icon + Title
+                        HStack(spacing: 4) {
+                            Image(systemName: "circle.hexagongrid.fill")
+                            Text(loc.currentLanguage == .chinese ? "视觉分析" : "Visual Analysis")
+                                .font(.system(size: 20, weight: .heavy))
+                        }
+                        .foregroundColor(.white)
                     }
                     
-                    // Features
-                    VStack(alignment: .leading, spacing: 30) {
-                        featureRow(icon: "circle.hexagongrid", title: "即时尺寸概览", desc: "浏览存储空间，同时查看什么内容占据最多空间。")
-                        featureRow(icon: "airplane", title: "快速决策", desc: "不浪费时间检查要删除内容的大小。")
+                    Text(loc.currentLanguage == .chinese ? 
+                         "对文件夹和文件进行视觉大小比较，方便快速清理。\\n上次扫描时间：从未" :
+                         "Visually compare folders and files for quick cleanup.\\nLast scanned: Never")
+                        .font(.system(size: 13))
+                        .foregroundColor(.white.opacity(0.7))
+                        .lineSpacing(4)
+                    
+                    // Feature Rows
+                    VStack(alignment: .leading, spacing: 24) {
+                        featureRow(
+                            icon: "circle.hexagongrid",
+                            title: loc.currentLanguage == .chinese ? "即时尺寸概览" : "Instant Size Overview",
+                            desc: loc.currentLanguage == .chinese ? "浏览存储空间，同时查看什么内容占据最多空间。" : "Browse storage and see what takes the most space."
+                        )
+                        
+                        featureRow(
+                            icon: "airplane",
+                            title: loc.currentLanguage == .chinese ? "快速决策" : "Quick Decisions",
+                            desc: loc.currentLanguage == .chinese ? "不浪费时间检查要删除内容的大小。" : "No time wasted checking sizes before deletion."
+                        )
+                        
+                        featureRow(
+                            icon: "chart.pie.fill",
+                            title: loc.currentLanguage == .chinese ? "可视化分析" : "Visual Analysis",
+                            desc: loc.currentLanguage == .chinese ? "通过直观的气泡图快速识别大文件。" : "Quickly identify large files with intuitive bubble chart."
+                        )
                     }
                     
-                    Spacer()
-                        .frame(height: 20)
-
                     // Disk Selector Card
                     diskSelectorCard
-                    
-                    Spacer()
-                        .frame(height: 100) // Space from bottom
+                        .padding(.top, 10)
                 }
-                .padding(.leading, 60)
-                .padding(.trailing, 20)
-                .frame(maxWidth: 400, alignment: .leading)
+                .frame(maxWidth: 400)
                 
-                Spacer()
-                
-                // Right Column: Planet Image
+                // Right Icon - Using kongjianshentou.png
                 ZStack {
                     if let imagePath = Bundle.main.path(forResource: "kongjianshentou", ofType: "png"),
                        let nsImage = NSImage(contentsOfFile: imagePath) {
                         Image(nsImage: nsImage)
                             .resizable()
                             .aspectRatio(contentMode: .fit)
-                            .frame(maxWidth: 500, maxHeight: 500)
+                            .frame(width: 320, height: 320)
+                            .shadow(color: Color.black.opacity(0.3), radius: 20, y: 10)
                     } else {
                         // Fallback
                         Circle()
-                            .fill(LinearGradient(colors: [.green.opacity(0.8), .teal], startPoint: .topLeading, endPoint: .bottomTrailing))
-                            .frame(width: 400, height: 400)
+                            .fill(LinearGradient(
+                                colors: [Color(hex: "00D9A8"), Color(hex: "009688")],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            ))
+                            .frame(width: 280, height: 280)
+                            .overlay(
+                                Image(systemName: "circle.hexagongrid.fill")
+                                    .font(.system(size: 100))
+                                    .foregroundColor(.white)
+                            )
                     }
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .offset(x: 0, y: -20)
             }
-            .padding(.top, 60)
+            .padding(.horizontal, 40)
+            .padding(.bottom, 50)
             
-            // Floating Scan Button (Bottom Center)
-            Button(action: startScan) {
-                ZStack {
-                    Circle()
-                        .stroke(Color.white.opacity(0.3), lineWidth: 1)
-                        .frame(width: 90, height: 90)
-                    
-                    Circle()
-                        .fill(LinearGradient(colors: [Color.white.opacity(0.2), Color.white.opacity(0.05)], startPoint: .top, endPoint: .bottom))
-                        .frame(width: 80, height: 80)
-                        .overlay(
-                            Circle()
-                                .stroke(Color.white, lineWidth: 2)
-                        )
-                        .shadow(color: .black.opacity(0.2), radius: 10, x: 0, y: 5)
-                    
-                    Text(loc.currentLanguage == .chinese ? "扫描" : "Scan")
-                        .font(.system(size: 18, weight: .semibold))
-                        .foregroundColor(.white)
+            // Bottom Floating Scan Button
+            VStack {
+                Spacer()
+                Button(action: startScan) {
+                    ZStack {
+                        Circle()
+                            .stroke(LinearGradient(
+                                colors: [.white.opacity(0.5), .white.opacity(0.1)],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            ), lineWidth: 2)
+                            .frame(width: 84, height: 84)
+                        
+                        Circle()
+                            .fill(Color.white.opacity(0.2))
+                            .frame(width: 74, height: 74)
+                            .shadow(color: Color.black.opacity(0.3), radius: 10, y: 5)
+                        
+                        Text(loc.currentLanguage == .chinese ? "扫描" : "Scan")
+                            .font(.system(size: 16, weight: .medium))
+                            .foregroundColor(.white)
+                    }
                 }
+                .buttonStyle(.plain)
+                .padding(.bottom, 40)
+                .transition(.scale.combined(with: .opacity))
             }
-            .buttonStyle(.plain)
-            .padding(.bottom, 40)
+        }
+    }
+    
+    // MARK: - Feature Row Helper
+    private func featureRow(icon: String, title: String, desc: String) -> some View {
+        HStack(alignment: .top, spacing: 16) {
+            Image(systemName: icon)
+                .font(.system(size: 24, weight: .light))
+                .foregroundColor(.white.opacity(0.8))
+                .frame(width: 32, height: 32)
+            
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title)
+                    .font(.system(size: 15, weight: .medium))
+                    .foregroundColor(.white)
+                Text(desc)
+                    .font(.system(size: 12))
+                    .foregroundColor(.white.opacity(0.6))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
     }
     
@@ -175,7 +222,7 @@ struct SpaceLensView: View {
             }
             Button(loc.currentLanguage == .chinese ? "用户文件夹" : "User Home") {
                 selectedDiskPath = FileManager.default.homeDirectoryForCurrentUser
-                selectedDiskName = "Users"
+                selectedDiskName = NSUserName() // 使用实际的用户名
             }
             Divider()
             Button(loc.currentLanguage == .chinese ? "选择文件夹..." : "Select Folder...") {
@@ -183,13 +230,15 @@ struct SpaceLensView: View {
             }
         } label: {
             HStack(spacing: 12) {
-                Image(systemName: "internaldrive.fill")
+                // 图标：根据选择的磁盘类型显示不同图标
+                Image(systemName: selectedDiskName == "mac" ? "internaldrive.fill" : "folder.fill")
                     .font(.system(size: 32))
                     .foregroundColor(.white.opacity(0.8))
                 
                 VStack(alignment: .leading, spacing: 4) {
                     HStack {
-                        Text(selectedDiskName == "mac" ? "mac: 245.11 GB" : "\(selectedDiskName): 245.11 GB") // Mock total for now
+                        // 显示磁盘名称和容量
+                        Text(diskDisplayName)
                             .font(.system(size: 14, weight: .semibold))
                             .foregroundColor(.white)
                         Spacer()
@@ -204,12 +253,13 @@ struct SpaceLensView: View {
                             
                             Capsule()
                                 .fill(Color.green)
-                                .frame(width: geo.size.width * 0.45, height: 4)
+                                .frame(width: geo.size.width * diskUsagePercentage, height: 4)
                         }
                     }
                     .frame(height: 4)
                     
-                    Text(loc.currentLanguage == .chinese ? "已使用 110.55 GB" : "Used 110.55 GB")
+                    // 显示已使用空间
+                    Text(diskUsageText)
                         .font(.system(size: 11))
                         .foregroundColor(.white.opacity(0.6))
                 }
@@ -234,25 +284,92 @@ struct SpaceLensView: View {
         .frame(width: 300)
     }
     
-
+    // MARK: - Disk Info Helpers
     
-    func featureRow(icon: String, title: String, desc: String) -> some View {
-        HStack(alignment: .top, spacing: 16) {
-            Image(systemName: icon)
-                .font(.system(size: 24))
-                .foregroundColor(.white.opacity(0.7))
-                .frame(width: 30)
+    /// 获取磁盘空间信息
+    private func getDiskSpaceInfo() -> (total: Int64, used: Int64, free: Int64)? {
+        let fileManager = FileManager.default
+        
+        do {
+            // 获取路径的文件系统属性
+            let attributes = try fileManager.attributesOfFileSystem(forPath: selectedDiskPath.path)
             
-            VStack(alignment: .leading, spacing: 4) {
-                Text(loc.currentLanguage == .chinese ? title : "Instant Overview")
-                    .font(.system(size: 13, weight: .bold))
-                    .foregroundColor(.white)
-                Text(loc.currentLanguage == .chinese ? desc : "See what takes up space instantly.")
-                    .font(.system(size: 12))
-                    .foregroundColor(.white.opacity(0.6))
+            // 总空间
+            let totalSpace = attributes[.systemSize] as? Int64 ?? 0
+            // 可用空间
+            let freeSpace = attributes[.systemFreeSize] as? Int64 ?? 0
+            // 已使用空间
+            let usedSpace = totalSpace - freeSpace
+            
+            return (total: totalSpace, used: usedSpace, free: freeSpace)
+        } catch {
+            print("Failed to get disk space info: \(error)")
+            return nil
+        }
+    }
+    
+    /// 格式化字节为可读大小
+    private func formatBytes(_ bytes: Int64) -> String {
+        let formatter = ByteCountFormatter()
+        formatter.allowedUnits = [.useGB, .useTB]
+        formatter.countStyle = .file
+        formatter.includesUnit = true
+        formatter.isAdaptive = true
+        return formatter.string(fromByteCount: bytes)
+    }
+    
+    /// 磁盘显示名称（包含真实容量）
+    private var diskDisplayName: String {
+        guard let diskInfo = getDiskSpaceInfo() else {
+            // 如果获取失败，返回简单名称
+            if selectedDiskName == "mac" {
+                return "mac"
+            } else if selectedDiskPath == FileManager.default.homeDirectoryForCurrentUser {
+                return selectedDiskName + " " + (loc.currentLanguage == .chinese ? "您的主文件夹" : "Your Home")
+            } else {
+                return selectedDiskName
+            }
+        }
+        
+        let totalSize = formatBytes(diskInfo.total)
+        
+        if selectedDiskName == "mac" {
+            return "mac: \(totalSize)"
+        } else {
+            // 对于用户文件夹或其他文件夹，显示名称和描述
+            if selectedDiskPath == FileManager.default.homeDirectoryForCurrentUser {
+                return selectedDiskName + " " + (loc.currentLanguage == .chinese ? "您的主文件夹" : "Your Home")
+            } else {
+                return selectedDiskName
             }
         }
     }
+    
+    /// 磁盘使用率（0.0 - 1.0）真实计算
+    private var diskUsagePercentage: CGFloat {
+        guard let diskInfo = getDiskSpaceInfo() else {
+            return 0.5 // 默认 50%
+        }
+        
+        guard diskInfo.total > 0 else {
+            return 0.0
+        }
+        
+        let percentage = CGFloat(diskInfo.used) / CGFloat(diskInfo.total)
+        return min(max(percentage, 0.0), 1.0) // 确保在 0.0 - 1.0 范围内
+    }
+    
+    /// 磁盘使用文本（真实数据）
+    private var diskUsageText: String {
+        guard let diskInfo = getDiskSpaceInfo() else {
+            return loc.currentLanguage == .chinese ? "无法获取空间信息" : "Unable to get space info"
+        }
+        
+        let usedSize = formatBytes(diskInfo.used)
+        
+        return loc.currentLanguage == .chinese ? "已使用 \(usedSize)" : "Used \(usedSize)"
+    }
+    
 
     // MARK: - Scanning View
     var scanningView: some View {

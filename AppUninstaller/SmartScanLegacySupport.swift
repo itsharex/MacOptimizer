@@ -409,10 +409,8 @@ struct AllCategoriesDetailSheet: View {
         case .userCache: return service.userCacheFiles
         case .systemCache: return service.systemCacheFiles
         case .oldUpdates: return service.oldUpdateFiles
-        case .languageFiles: return service.languageFiles
         case .systemLogs: return service.systemLogFiles
         case .userLogs: return service.userLogFiles
-        case .brokenLoginItems: return service.brokenLoginItems
         case .duplicates: return service.duplicateGroups.flatMap { $0.files }
         case .similarPhotos: return service.similarPhotoGroups.flatMap { $0.files }
         case .largeFiles: return service.largeFiles
@@ -785,7 +783,7 @@ struct FileItemRow: View {
             } message: {
                 let fileName = file.name
                 Text(LocalizationManager.shared.currentLanguage == .chinese ?
-                     "确定要删除\" \(fileName)\" 吗？此操作无法撤销。" :
+                     "确定要删除\"\(fileName)\"吗？此操作无法撤销。" :
                      "Are you sure you want to delete \"\(fileName)\"? This action cannot be undone.")
             }
             .contextMenu {

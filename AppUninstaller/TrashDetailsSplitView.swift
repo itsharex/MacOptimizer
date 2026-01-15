@@ -194,7 +194,6 @@ struct TrashDetailsSplitView: View {
                 .padding(.bottom, 30)
             }
         }
-        .background(TealMeshBackground()) // Unified background
         .confirmationDialog(loc.L("empty_trash"), isPresented: $showCleanConfirmation) {
             Button(loc.L("empty_trash"), role: .destructive) {
                 Task {

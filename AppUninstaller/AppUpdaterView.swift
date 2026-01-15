@@ -405,40 +405,55 @@ struct AppUpdaterView: View {
     
     // MARK: - Landing View
     var landingView: some View {
-        GeometryReader { geometry in
-            HStack(spacing: 40) { // Added explicit spacing
-                // Left Content - Vertically Centered
-                VStack(alignment: .leading, spacing: 32) {
-                    VStack(alignment: .leading, spacing: 16) {
-                        Text(loc.currentLanguage == .chinese ? "更新程序" : "Updater")
-                            .font(.system(size: 34, weight: .bold))
+        ZStack {
+            HStack(spacing: 60) {
+                // Left Content
+                VStack(alignment: .leading, spacing: 30) {
+                    // Branding Header
+                    HStack(spacing: 8) {
+                        Text(loc.currentLanguage == .chinese ? "程序更新" : "App Updates")
+                            .font(.system(size: 16, weight: .medium))
                             .foregroundColor(.white)
                         
-                        Text(loc.currentLanguage == .chinese ? "让所有应用程序始终保持最新、最可靠的版本。" : "Keep all your apps up to date with the latest and most reliable versions.")
-                            .font(.system(size: 14))
-                            .foregroundColor(.white.opacity(0.8))
-                    }
-                    
-                    // Features
-                    VStack(alignment: .leading, spacing: 24) {
-                        featureRow(icon: "arrow.triangle.2.circlepath", text: loc.currentLanguage == .chinese ? "仅使用最新版本" : "Use only the latest versions", subtext: loc.currentLanguage == .chinese ? "让 MacOptimizer 为您检查和更新软件。" : "Let MacOptimizer check and update software for you.")
-                        
-                        featureRow(icon: "exclamationmark.shield", text: loc.currentLanguage == .chinese ? "避免软件不兼容" : "Avoid software incompatibility", subtext: loc.currentLanguage == .chinese ? "再也不会出现应用程序过时引起的兼容性问题。" : "No more compatibility issues caused by outdated apps.")
-                    }
-                    
-                    // Action Button
-                    if service.isScanning {
-                        HStack {
-                            ProgressView(value: service.progress)
-                                .progressViewStyle(.circular)
-                                .scaleEffect(0.8)
-                                .brightness(10)
-                            Text(loc.currentLanguage == .chinese ? "正在检查更新..." : "Checking for updates...")
-                                .foregroundColor(.white.opacity(0.8))
-                                .font(.system(size: 13))
+                        // Update Icon
+                        HStack(spacing: 4) {
+                            Image(systemName: "arrow.triangle.2.circlepath.circle.fill")
+                            Text(loc.currentLanguage == .chinese ? "保持最新" : "Stay Updated")
+                                .font(.system(size: 20, weight: .heavy))
                         }
-                        .padding(.top, 10)
-                    } else {
+                        .foregroundColor(.white)
+                    }
+                    
+                    Text(loc.currentLanguage == .chinese ? 
+                         "让所有应用程序始终保持最新、最可靠的版本。\n上次检查时间：从未" :
+                         "Keep all your apps up to date with the latest versions.\nLast checked: Never")
+                        .font(.system(size: 13))
+                        .foregroundColor(.white.opacity(0.7))
+                        .lineSpacing(4)
+                    
+                    // Feature Rows
+                    VStack(alignment: .leading, spacing: 24) {
+                        featureRow(
+                            icon: "arrow.triangle.2.circlepath",
+                            title: loc.currentLanguage == .chinese ? "自动检查更新" : "Auto Check Updates",
+                            subtitle: loc.currentLanguage == .chinese ? "让 Mac优化大师 为您检查和更新软件。" : "Let Mac Optimizer check and update software for you."
+                        )
+                        
+                        featureRow(
+                            icon: "exclamationmark.shield",
+                            title: loc.currentLanguage == .chinese ? "避免软件不兼容" : "Avoid Incompatibility",
+                            subtitle: loc.currentLanguage == .chinese ? "再也不会出现应用程序过时引起的兼容性问题。" : "No more compatibility issues caused by outdated apps."
+                        )
+                        
+                        featureRow(
+                            icon: "checkmark.seal.fill",
+                            title: loc.currentLanguage == .chinese ? "安全可靠更新" : "Safe & Reliable",
+                            subtitle: loc.currentLanguage == .chinese ? "仅从 App Store 官方渠道更新您的应用程序。" : "Update apps only from official App Store channels."
+                        )
+                    }
+                    
+                    // Optional: View Updates Button (Hidden when scanning)
+                    if !service.isScanning && service.scanComplete && service.updates.count > 0 {
                         Button(action: {
                             withAnimation {
                                 viewState = 1
@@ -450,59 +465,133 @@ struct AppUpdaterView: View {
                             Text(loc.currentLanguage == .chinese ? "查看 \(service.updates.count) 个更新..." : "View \(service.updates.count) Updates...")
                                 .font(.system(size: 13, weight: .semibold))
                                 .foregroundColor(.black)
-                                .padding(.horizontal, 24)
-                                .padding(.vertical, 10)
-                                .background(Color(red: 0.4, green: 0.8, blue: 0.9)) // Cyan button
-                                .cornerRadius(8)
-                                .shadow(color: Color.black.opacity(0.2), radius: 4, y: 2)
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 8)
+                                .background(Color(hex: "4DDEE8")) // Teal (matching Trash)
+                                .cornerRadius(6)
                         }
                         .buttonStyle(.plain)
-                        .disabled(service.updates.isEmpty)
                         .padding(.top, 10)
                     }
                 }
-                .padding(.leading, 140) // Increased padding to move text right
-                .frame(maxWidth: .infinity, alignment: .leading)
+                .frame(maxWidth: 400)
                 
-                // Right Icon
+                // Right Icon - Using gengxinchengxu.png (or appuploader.png as fallback)
                 ZStack {
-                    if let path = Bundle.main.path(forResource: "appuploader", ofType: "png"),
-                       let nsImage = NSImage(contentsOfFile: path) {
+                    if let imagePath = Bundle.main.path(forResource: "gengxinchengxu", ofType: "png"),
+                       let nsImage = NSImage(contentsOfFile: imagePath) {
                         Image(nsImage: nsImage)
                             .resizable()
-                            .scaledToFit()
-                            .frame(width: 480, height: 480)
+                            .aspectRatio(contentMode: .fit)
+                            .frame(width: 320, height: 320)
+                            .shadow(color: Color.black.opacity(0.3), radius: 20, y: 10)
+                    } else if let imagePath = Bundle.main.path(forResource: "appuploader", ofType: "png"),
+                              let nsImage = NSImage(contentsOfFile: imagePath) {
+                        Image(nsImage: nsImage)
+                            .resizable()
+                            .aspectRatio(contentMode: .fit)
+                            .frame(width: 320, height: 320)
+                            .shadow(color: Color.black.opacity(0.3), radius: 20, y: 10)
                     } else {
                         // Fallback
-                        Circle()
-                            .fill(LinearGradient(colors: [Color.green.opacity(0.3)], startPoint: .top, endPoint: .bottom))
+                        RoundedRectangle(cornerRadius: 40)
+                            .fill(LinearGradient(
+                                colors: [Color.blue.opacity(0.6), Color.cyan.opacity(0.4)],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            ))
+                            .frame(width: 280, height: 280)
+                            .overlay(
+                                Image(systemName: "arrow.triangle.2.circlepath.circle.fill")
+                                    .font(.system(size: 100))
+                                    .foregroundColor(.white)
+                            )
                     }
                 }
-                .frame(width: geometry.size.width * 0.45)
-                .padding(.trailing, 40)
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .padding(.horizontal, 40)
+            .padding(.bottom, 50)
+            
+            // Bottom Floating Check Updates Button
+            VStack {
+                Spacer()
+                
+                if service.isScanning {
+                    // Scanning Progress
+                    VStack(spacing: 12) {
+                        ZStack {
+                            Circle()
+                                .stroke(Color.white.opacity(0.3), lineWidth: 2)
+                                .frame(width: 84, height: 84)
+                            
+                            Circle()
+                                .trim(from: 0, to: service.progress)
+                                .stroke(Color.white, style: StrokeStyle(lineWidth: 2, lineCap: .round))
+                                .frame(width: 84, height: 84)
+                                .rotationEffect(.degrees(-90))
+                            
+                            ProgressView()
+                                .progressViewStyle(.circular)
+                                .scaleEffect(1.2)
+                                .tint(.white)
+                        }
+                        Text(loc.currentLanguage == .chinese ? "正在检查更新..." : "Checking...")
+                            .font(.system(size: 12))
+                            .foregroundColor(.white.opacity(0.8))
+                    }
+                    .padding(.bottom, 40)
+                } else {
+                    Button(action: {
+                        Task {
+                            await service.scanForUpdates()
+                        }
+                    }) {
+                        ZStack {
+                            Circle()
+                                .stroke(LinearGradient(
+                                    colors: [.white.opacity(0.5), .white.opacity(0.1)],
+                                    startPoint: .top,
+                                    endPoint: .bottom
+                                ), lineWidth: 2)
+                                .frame(width: 84, height: 84)
+                            
+                            Circle()
+                                .fill(Color.white.opacity(0.2))
+                                .frame(width: 74, height: 74)
+                                .shadow(color: Color.black.opacity(0.3), radius: 10, y: 5)
+                            
+                            Text(loc.currentLanguage == .chinese ? "检查" : "Check")
+                                .font(.system(size: 16, weight: .medium))
+                                .foregroundColor(.white)
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.bottom, 40)
+                    .transition(.scale.combined(with: .opacity))
+                }
+            }
         }
     }
     
-    func featureRow(icon: String, text: String, subtext: String) -> some View {
+    // MARK: - Feature Row Helper
+    func featureRow(icon: String, title: String, subtitle: String) -> some View {
         HStack(alignment: .top, spacing: 16) {
             Image(systemName: icon)
-                .font(.system(size: 24))
-                .foregroundColor(.white.opacity(0.6))
-                .frame(width: 32)
+                .font(.system(size: 24, weight: .light))
+                .foregroundColor(.white.opacity(0.8))
+                .frame(width: 32, height: 32)
             
             VStack(alignment: .leading, spacing: 4) {
-                Text(text)
-                    .font(.system(size: 13, weight: .medium))
+                Text(title)
+                    .font(.system(size: 14, weight: .medium))
                     .foregroundColor(.white)
-                Text(subtext)
-                    .font(.system(size: 12))
-                    .foregroundColor(.white.opacity(0.6))
+                
+                Text(subtitle)
+                    .font(.system(size: 13))
+                    .foregroundColor(.white.opacity(0.7))
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
-        .padding(.bottom, 20)
     }
     
     // MARK: - List View

@@ -187,14 +187,14 @@ struct NavigationSidebar: View {
         }
         .frame(width: 200)
         .background(
-            // 毛玻璃效果背景
+            // 轻量半透明背景，让全局背景透过
             ZStack {
-                Color.black.opacity(0.3)
+                Color.black.opacity(0.15)  // 从0.3降低到0.15，更透明
                 
-                // 顶部渐变高光
+                // 顶部轻微渐变高光
                 LinearGradient(
                     stops: [
-                        .init(color: Color.white.opacity(0.08), location: 0),
+                        .init(color: Color.white.opacity(0.04), location: 0),  // 从0.08降低到0.04
                         .init(color: Color.clear, location: 0.3)
                     ],
                     startPoint: .top,

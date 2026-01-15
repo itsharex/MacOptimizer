@@ -146,14 +146,9 @@ class AppScanner: NSObject, ObservableObject {
         let bundleIdentifier = infoPlist["CFBundleIdentifier"] as? String
         let version = infoPlist["CFBundleShortVersionString"] as? String
         
-        // Get app icon
-        var icon = NSImage(named: NSImage.applicationIconName) ?? NSImage()
-        if let iconName = infoPlist["CFBundleIconFile"] as? String {
-            let iconPath = url.appendingPathComponent("Contents/Resources/\(iconName).icns").path
-            if fileManager.fileExists(atPath: iconPath) {
-                icon = NSImage(contentsOfFile: iconPath) ?? icon
-            }
-        }
+        // Get app icon using NSWorkspace for accurate icon retrieval
+        // This handles all icon formats: .icns, Asset Catalogs, and system defaults
+        let icon = NSWorkspace.shared.icon(forFile: url.path)
         
         // Get app size with caching
         let size = await getDirectorySize(url)

@@ -70,9 +70,6 @@ struct JunkCleanerView: View {
     
     var body: some View {
         ZStack {
-            // Purple Theme Background
-            PurpleMeshBackground()
-            
             switch scanState {
             case .initial:
                 initialPage
@@ -90,7 +87,6 @@ struct JunkCleanerView: View {
                 finishedPage
             }
         }
-        .edgesIgnoringSafeArea(.all)
         .alert(loc.currentLanguage == .chinese ? "部分文件需要管理员权限" : "Some Files Require Admin Privileges", isPresented: $showRetryWithAdmin) {
             Button(loc.currentLanguage == .chinese ? "使用管理员权限删除" : "Delete with Admin", role: .destructive) {
                  showCleaningFinished = true
@@ -182,7 +178,7 @@ struct JunkCleanerView: View {
                 .frame(width: 300)
                 
                 // Right Side: Large Pink Mouse Icon
-                if let imagePath = Bundle.main.path(forResource: "system_clean", ofType: "png"),
+                if let imagePath = Bundle.main.path(forResource: "system_clean_menu", ofType: "png"),
                    let nsImage = NSImage(contentsOfFile: imagePath) {
                     Image(nsImage: nsImage)
                         .resizable()
@@ -238,7 +234,7 @@ struct JunkCleanerView: View {
             
             // Center Image with Animation
             ZStack {
-                if let imagePath = Bundle.main.path(forResource: "system_clean", ofType: "png"),
+                if let imagePath = Bundle.main.path(forResource: "system_clean_menu", ofType: "png"),
                    let nsImage = NSImage(contentsOfFile: imagePath) {
                     Image(nsImage: nsImage)
                         .resizable()
@@ -350,7 +346,7 @@ struct JunkCleanerView: View {
             
             HStack(spacing: 80) { // Increased spacing
                 // Left: Image - Slightly Larger
-                if let imagePath = Bundle.main.path(forResource: "system_clean", ofType: "png"),
+                if let imagePath = Bundle.main.path(forResource: "system_clean_menu", ofType: "png"),
                    let nsImage = NSImage(contentsOfFile: imagePath) {
                     Image(nsImage: nsImage)
                         .resizable()
@@ -1060,49 +1056,6 @@ struct VisualEffectView: NSViewRepresentable {
 
 // Removed duplicate GradientStyles struct here. Using global one in Styles.swift
 
-// MARK: - Purple Mesh Background (Pro Max Theme) - Lighter Version
-struct PurpleMeshBackground: View {
-    var body: some View {
-        ZStack {
-            // 1. Lighter Gradient Base
-            // Reference Image: Top Left Pink/Rose (#D65C92ish), Bottom Right Deep Purple/Blue
-            LinearGradient(
-                colors: [
-                    Color(hex: "D15589"), // Rose Pink
-                    Color(hex: "4A4385")  // Deep Purple
-                ],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-            
-            // 2. Soft Overlays
-            GeometryReader { proxy in
-                ZStack {
-                    // Top-Left Light Glow
-                    Circle()
-                        .fill(Color(hex: "FF8FB1").opacity(0.3))
-                        .frame(width: 800, height: 800)
-                        .blur(radius: 100)
-                        .offset(x: -200, y: -200)
-                    
-                    // Bottom-Right Deep Shadow/Glow
-                    Circle()
-                        .fill(Color(hex: "35316E").opacity(0.6))
-                        .frame(width: 900, height: 900)
-                        .blur(radius: 120)
-                        .offset(x: 200, y: 300)
-                }
-            }
-            
-            // 3. Subtle Noise/Texture
-             Rectangle()
-                .fill(Color.white.opacity(0.03))
-                .blendMode(.overlay)
-        }
-        .ignoresSafeArea()
-    }
-}
-
 // MARK: - Glassy Purple Disc (Icon)
 struct GlassyPurpleDisc: View {
     var scale: CGFloat = 1.0
@@ -1180,3 +1133,6 @@ struct CircleCheckboxStyle: ToggleStyle {
         .buttonStyle(.plain)
     }
 }
+
+// MARK: - Universal Binary Warning Dialog
+// UniversalBinaryWarningDialog 已移除 - 通用二进制瘦身功能已禁用

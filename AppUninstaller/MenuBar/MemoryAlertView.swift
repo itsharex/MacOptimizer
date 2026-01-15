@@ -156,7 +156,7 @@ struct MemoryAlertView: View {
                 }
             }
             .padding(20)
-            .background(Color(hex: "F2F2F7")) // Light gray background like standard macOS popovers/CleanMyMac
+            .background(Color(hex: "F2F2F7")) // Light gray background for modern macOS popover style
             .cornerRadius(16)
         }
         .frame(width: 320)

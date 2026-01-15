@@ -23,17 +23,6 @@ struct DeepCleanView: View {
     
     var body: some View {
         ZStack {
-            // 深紫蓝渐变背景（类似 CleanMyMac）
-            LinearGradient(
-                colors: [
-                    Color(red: 0.15, green: 0.1, blue: 0.3),   // 深紫色
-                    Color(red: 0.05, green: 0.15, blue: 0.25)  // 深蓝色
-                ],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-            .ignoresSafeArea()
-            
             VStack {
                  switch viewState {
                  case .initial:
@@ -47,6 +36,38 @@ struct DeepCleanView: View {
                  case .finished:
                      finishedView
                  }
+            }
+            
+            // Bottom Floating Scan Button (Only on initial view)
+            if viewState == .initial {
+                VStack {
+                    Spacer()
+                    Button(action: {
+                        Task { await scanner.startScan() }
+                    }) {
+                        ZStack {
+                            Circle()
+                                .stroke(LinearGradient(
+                                    colors: [.white.opacity(0.5), .white.opacity(0.1)],
+                                    startPoint: .top,
+                                    endPoint: .bottom
+                                ), lineWidth: 2)
+                                .frame(width: 84, height: 84)
+                            
+                            Circle()
+                                .fill(Color.white.opacity(0.2))
+                                .frame(width: 74, height: 74)
+                                .shadow(color: Color.black.opacity(0.3), radius: 10, y: 5)
+                            
+                            Text(loc.currentLanguage == .chinese ? "扫描" : "Scan")
+                                .font(.system(size: 16, weight: .medium))
+                                .foregroundColor(.white)
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.bottom, 40)
+                    .transition(.scale.combined(with: .opacity))
+                }
             }
         }
         .onAppear {
@@ -91,47 +112,114 @@ struct DeepCleanView: View {
     
     // MARK: - 1. Initial View (初始化页面)
     var initialView: some View {
-        VStack(spacing: 0) {
-            Spacer()
-            
-            // Icon
-            ZStack {
-                Circle()
-                    .fill(LinearGradient(colors: [Color.cyan.opacity(0.3), Color.blue.opacity(0.3)], startPoint: .topLeading, endPoint: .bottomTrailing))
-                    .frame(width: 180, height: 180)
-                
-                Image(systemName: "magnifyingglass")
-                    .font(.system(size: 80))
-                    .foregroundColor(.cyan)
-            }
-            .padding(.bottom, 40)
-            
-            // Title
-            Text(loc.currentLanguage == .chinese ? "深度系统清理" : "Deep System Clean")
-                .font(.system(size: 28, weight: .semibold))
-                .foregroundColor(.white)
-                .padding(.bottom, 12)
-            
-            Text(loc.currentLanguage == .chinese ? 
-                 "扫描整个 Mac 的大文件、垃圾文件、缓存、日志及应用残留。" :
-                 "Scan your entire Mac for large files, junk, caches, logs, and leftovers.")
-                .font(.body)
-                .foregroundColor(.secondaryText)
-                .multilineTextAlignment(.center)
-                .padding(.horizontal, 60)
-                .padding(.bottom, 60)
-            
-            Spacer()
-            
-            // Start Button (using CircularActionButton)
-            CircularActionButton(
-                title: loc.currentLanguage == .chinese ? "扫描" : "Scan",
-                gradient: CircularActionButton.blueGradient,
-                action: {
-                    Task { await scanner.startScan() }
+        HStack(spacing: 60) {
+            // Left Content
+            VStack(alignment: .leading, spacing: 30) {
+                // Branding Header
+                HStack(spacing: 8) {
+                    Text(loc.currentLanguage == .chinese ? "深度系统清理" : "Deep System Clean")
+                        .font(.system(size: 16, weight: .medium))
+                        .foregroundColor(.white)
+                    
+                    // Magnifying Glass Icon
+                    HStack(spacing: 4) {
+                        Image(systemName: "magnifyingglass.circle.fill")
+                        Text(loc.currentLanguage == .chinese ? "全面扫描" : "Full Scan")
+                            .font(.system(size: 20, weight: .heavy))
+                    }
+                    .foregroundColor(.white)
                 }
-            )
-            .padding(.bottom, 60)
+                
+                Text(loc.currentLanguage == .chinese ? 
+                     "扫描整个 Mac 的大文件、垃圾文件、缓存、日志及应用残留。\n上次扫描时间：从未" :
+                     "Scan your entire Mac for large files, junk, caches, logs, and leftovers.\nLast scan: Never")
+                    .font(.system(size: 13))
+                    .foregroundColor(.white.opacity(0.7))
+                    .lineSpacing(4)
+                
+                // Feature Rows
+                VStack(alignment: .leading, spacing: 24) {
+                    featureRow(
+                        icon: "doc.text.magnifyingglass",
+                        title: loc.currentLanguage == .chinese ? "查找大文件" : "Find Large Files",
+                        desc: loc.currentLanguage == .chinese ? "快速定位占用空间的大文件和旧文件。" : "Quickly locate large and old files taking up space."
+                    )
+                    
+                    featureRow(
+                        icon: "trash.circle",
+                        title: loc.currentLanguage == .chinese ? "清理系统垃圾" : "Clean System Junk",
+                        desc: loc.currentLanguage == .chinese ? "移除缓存、日志和临时文件释放空间。" : "Remove caches, logs and temp files to free up space."
+                    )
+                    
+                    featureRow(
+                        icon: "app.badge",
+                        title: loc.currentLanguage == .chinese ? "检测应用残留" : "Detect App Residuals",
+                        desc: loc.currentLanguage == .chinese ? "查找已卸载应用遗留的文件和数据。" : "Find files and data left behind by uninstalled apps."
+                    )
+                }
+                
+                // Configure Button (Cyan)
+                Button(action: {}) {
+                    Text(loc.currentLanguage == .chinese ? "配置扫描选项..." : "Configure Scan Options...")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundColor(.black)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 8)
+                        .background(Color(hex: "4DDEE8")) // Cyan
+                        .cornerRadius(6)
+                }
+                .buttonStyle(.plain)
+                .padding(.top, 10)
+            }
+            .frame(maxWidth: 400)
+            
+            // Right Icon - Using shenduqingli.png
+            ZStack {
+                if let path = Bundle.main.path(forResource: "shenduqingli", ofType: "png"),
+                   let nsImage = NSImage(contentsOfFile: path) {
+                    Image(nsImage: nsImage)
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .frame(width: 320, height: 320)
+                        .shadow(color: Color.black.opacity(0.3), radius: 20, y: 10)
+                } else {
+                    // Fallback
+                    RoundedRectangle(cornerRadius: 40)
+                        .fill(LinearGradient(
+                            colors: [Color(hex: "00B4D8"), Color(hex: "0077B6")],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        ))
+                        .frame(width: 280, height: 280)
+                        .overlay(
+                            Image(systemName: "magnifyingglass.circle.fill")
+                                .font(.system(size: 100))
+                                .foregroundColor(.white)
+                        )
+                }
+            }
+        }
+        .padding(.horizontal, 40)
+        .padding(.bottom, 50)
+    }
+    
+    // MARK: - Feature Row Helper
+    private func featureRow(icon: String, title: String, desc: String) -> some View {
+        HStack(alignment: .top, spacing: 16) {
+            Image(systemName: icon)
+                .font(.system(size: 24, weight: .light))
+                .foregroundColor(.white.opacity(0.8))
+                .frame(width: 32, height: 32)
+            
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title)
+                    .font(.system(size: 15, weight: .medium))
+                    .foregroundColor(.white)
+                Text(desc)
+                    .font(.system(size: 12))
+                    .foregroundColor(.white.opacity(0.6))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
     }
     

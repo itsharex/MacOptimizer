@@ -39,7 +39,7 @@ let package = Package(
                 .process("resubscribe_welcome@2x.png"),
                 .process("smart-scan.2f4ddf59.png"),
                 .process("system-junk-mouse.png"),
-                .process("system_clean.png"),
+                .process("system_clean_menu.png"),
                 .process("yinsi.png"),
                 .process("youhua.png")
             ]

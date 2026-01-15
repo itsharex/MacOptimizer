@@ -1,7 +1,7 @@
 import SwiftUI
 import AppKit
 
-// MARK: - 全局配色方案 (CleanMyMac X 风格)
+// MARK: - 全局配色方案 (现代 macOS 应用风格)
 extension Color {
     // 背景色
     static let mainBackground = Color(red: 0.12, green: 0.12, blue: 0.18) // 更深邃的蓝紫背景
@@ -149,7 +149,7 @@ struct GradientStyles {
         endPoint: .bottomTrailing
     )
 
-    // 13. 更新程序 (蓝绿/青色渐变 - 匹配 CleanMyMac 更新风格)
+    // 13. 更新程序 (蓝绿/青色渐变 - 现代更新界面风格)
     static let updater = LinearGradient(
         colors: [Color(hex: "00B894"), Color(hex: "00A8E8")], // Teal to Light Blue
         startPoint: .topLeading,
@@ -200,11 +200,11 @@ struct BackgroundStyles {
         endPoint: .bottomTrailing
     )
     
-    // 2. 垃圾清理 (洋红/紫 - 参考用户提供的 CleanMyMac 截图)
+    // 2. 垃圾清理 (粉紫渐变 - 现代清理工具风格)
     static let cleaner = LinearGradient(
         stops: [
-            .init(color: Color(red: 0.8, green: 0.0, blue: 0.5), location: 0.0), // 洋红
-            .init(color: Color(red: 0.4, green: 0.0, blue: 0.4), location: 1.0)  // 深紫
+            .init(color: Color(hex: "D15589"), location: 0.0), // 粉红色
+            .init(color: Color(hex: "4A4385"), location: 1.0)  // 深紫色
         ],
         startPoint: .topLeading,
         endPoint: .bottomTrailing
@@ -249,11 +249,12 @@ struct BackgroundStyles {
         endPoint: .bottomTrailing
     )
     
-    // 6. 深度清理 (翡翠绿 - 深度/精准)
+    // 6. 深度清理 (青蓝色渐变 - 深度/精准扫描)
     static let deepClean = LinearGradient(
         stops: [
-            .init(color: Color(red: 0.0, green: 0.4, blue: 0.3), location: 0.0), // 翡翠绿
-            .init(color: Color(red: 0.0, green: 0.2, blue: 0.15), location: 1.0) // 深绿
+            .init(color: Color(hex: "00B4D8"), location: 0.0), // 明亮青色
+            .init(color: Color(hex: "0077B6"), location: 0.5), // 中蓝色
+            .init(color: Color(hex: "023E8A"), location: 1.0)  // 深蓝色
         ],
         startPoint: .topLeading,
         endPoint: .bottomTrailing

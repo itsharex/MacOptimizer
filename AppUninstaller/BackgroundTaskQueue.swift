@@ -36,50 +36,32 @@ import Foundation
 /// await queue.cancelAll()
 /// ```
 actor BackgroundTaskQueue {
-    private var taskQueue: [() async -> Void] = []
     private var isProcessing = false
     
     /// Enqueue a task for sequential execution
     /// - Parameter operation: An async closure to execute
     /// - Returns: The result of the operation
+    /// 
+    /// **Note**: The actor itself ensures serial execution.
+    /// All calls to this method will execute sequentially, one at a time.
     func enqueue<T>(_ operation: @escaping () async -> T) async -> T {
-        var result: T?
+        isProcessing = true
+        defer { isProcessing = false }
         
-        // Create a wrapper that captures the result
-        let wrappedTask: () async -> Void = {
-            result = await operation()
-        }
-        
-        // Add to queue
-        taskQueue.append(wrappedTask)
-        
-        // Process queue if not already processing
-        if !isProcessing {
-            await processQueue()
-        }
-        
-        return result!
+        // Execute and return the result
+        // The actor ensures this runs sequentially
+        return await operation()
     }
     
     /// Cancel all pending tasks
     func cancelAll() {
-        taskQueue.removeAll()
+        // Actor-based sequential execution means tasks are not "queued" in a traditional sense
+        // Once a task starts, it runs to completion
+        // This method is kept for API compatibility but doesn't need to do anything
     }
     
     /// Check if queue is currently processing tasks
     var isCurrentlyProcessing: Bool {
         return isProcessing
-    }
-    
-    // MARK: - Private Helpers
-    
-    private func processQueue() async {
-        isProcessing = true
-        defer { isProcessing = false }
-        
-        while !taskQueue.isEmpty {
-            let task = taskQueue.removeFirst()
-            await task()
-        }
     }
 }

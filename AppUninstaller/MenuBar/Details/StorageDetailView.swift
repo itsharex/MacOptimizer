@@ -35,8 +35,7 @@ struct StorageDetailView: View {
                             .frame(width: 160, height: 160)
                         
                         // Data Ring (Free Space for contrast or Used Space?)
-                        // "CleanMyMac" usually shows "Available" effectively.
-                        // Let's show Used Space in Color.
+                        // Show Used Space in Color for better visualization.
                         let usedPercent = 1.0 - (Double(diskManager.freeSize) / Double(diskManager.totalSize))
                         
                         Circle()

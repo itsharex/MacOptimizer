@@ -1649,7 +1649,7 @@ private func currentScanPathInColumn(_ title: String) -> String? {
 
     private func getIconFor(category: CleanerCategory) -> String {
         switch category {
-        case .systemJunk, .userCache, .systemCache, .userLogs, .systemLogs, .languageFiles:
+        case .systemJunk, .userCache, .systemCache, .userLogs, .systemLogs:
             return "system_clean"
         case .duplicates, .similarPhotos:
             return "kongjianshentou"

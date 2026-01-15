@@ -400,32 +400,15 @@ class JunkCleaner: ObservableObject {
                     // --- 特殊类型的专门处理逻辑 ---
                     
                     if type == .universalBinaries {
-                         // 扫描应用目录
-                        if let contents = try? self.fileManager.contentsOfDirectory(at: url, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]) {
-                             for appURL in contents where appURL.pathExtension == "app" {
-                                 await MainActor.run { 
-                                     self.currentScanningPath = appURL.path 
-                                     self.currentScanningCategory = type.rawValue
-                                 } 
-                                 let binaryPath = appURL.appendingPathComponent("Contents/MacOS/\(appURL.deletingPathExtension().lastPathComponent)")
-                                 if self.fileManager.fileExists(atPath: binaryPath.path) {
-                                     // 使用 lipo -detailed_info 获取精确大小
-                                     if let savings = self.calculateUniversalBinarySavings(at: binaryPath) {
-                                         // 只有节省空间 > 0 才列出
-                                         if savings > 0 {
-                                             // Key Change: path = appURL (for UI), contextPath = binaryPath (for cleaning)
-                                             // New Naming: [AppName] Extra File (e.g., "WeChat Extra 文件")
-                                             let appName = appURL.deletingPathExtension().lastPathComponent
-                                             let extraText = LocalizationManager.shared.currentLanguage == .chinese ? "Extra 文件" : "Extra File"
-                                             let displayName = "\(appName) \(extraText)"
-                                             
-                                             items.append(JunkItem(type: type, path: appURL, size: savings, contextPath: binaryPath, customName: displayName)) 
-                                         }
-                                     }
-                                 }
-                             }
-                        }
-                        return (items, false)
+                        // ⚠️ 功能已禁用：通用二进制瘦身会修改应用本身
+                        // 根据安全原则，应用相关功能只能清理缓存和垃圾，不能修改应用
+                        // 修改应用二进制文件会导致：
+                        // - 破坏代码签名
+                        // - 破坏 App Store 应用
+                        // - 破坏公证（Notarization）
+                        // - 触发 GateKeeper 警告
+                        print("[JunkCleaner] universalBinaries DISABLED for safety - modifying app binaries breaks signatures")
+                        return ([], false)
                     }
                     
                     if type == .unusedDiskImages {
@@ -627,68 +610,7 @@ class JunkCleaner: ObservableObject {
     // MARK: - 辅助分析方法
     
     /// 计算通用二进制文件瘦身可释放的空间
-    private func calculateUniversalBinarySavings(at url: URL) -> Int64? {
-        let path = url.path
-        let task = Process()
-        task.launchPath = "/usr/bin/lipo"
-        task.arguments = ["-detailed_info", path]
-        
-        let pipe = Pipe()
-        task.standardOutput = pipe
-        
-        do {
-            try task.run()
-            task.waitUntilExit()
-            
-            let data = pipe.fileHandleForReading.readDataToEndOfFile()
-            guard let output = String(data: data, encoding: .utf8) else { return nil }
-            
-            // 解析 output
-            // 格式示例:
-            // architecture x86_64
-            //     size 123456
-            //     offset 0
-            // architecture arm64
-            //     size 123456
-            
-            var archSizes: [String: Int64] = [:]
-            
-            let lines = output.components(separatedBy: .newlines)
-            var currentArch: String?
-            
-            for line in lines {
-                let trimmed = line.trimmingCharacters(in: .whitespaces)
-                if trimmed.starts(with: "architecture ") {
-                    currentArch = trimmed.components(separatedBy: " ").last
-                } else if let arch = currentArch, trimmed.starts(with: "size ") {
-                    if let sizeStr = trimmed.components(separatedBy: " ").last,
-                       let size = Int64(sizeStr) {
-                        archSizes[arch] = size
-                    }
-                }
-            }
-            
-            // 确定当前架构
-            var currentSystemArch = "x86_64"
-            #if arch(arm64)
-            currentSystemArch = "arm64"
-            #endif
-            
-            // 必须包含当前架构，且至少包含另一个架构才算 Universal
-            guard archSizes.keys.contains(currentSystemArch) && archSizes.count > 1 else {
-                return nil
-            }
-            
-            // 计算可移除的架构总大小
-            // 保留当前架构，移除其他所有
-            let totalRemovable = archSizes.filter { $0.key != currentSystemArch }.reduce(0) { $0 + $1.value }
-            
-            return totalRemovable
-            
-        } catch {
-            return nil
-        }
-    }
+    // calculateUniversalBinarySavings 已移除 - 通用二进制瘦身功能已禁用
     
     /// 获取所有已安装应用的 Bundle ID（改进版）
     private func getAllInstalledAppBundleIds() -> Set<String> {
@@ -828,20 +750,8 @@ class JunkCleaner: ObservableObject {
         let selectedItems = junkItems.filter { $0.isSelected }
         var failedItems: [JunkItem] = []
         
+        // 处理所有选中的文件
         for item in selectedItems {
-            // 特殊类型处理
-            if item.type == .universalBinaries {
-                let freedBytes = await thinUniversalBinary(item)
-                if freedBytes > 0 {
-                    cleanedSize += freedBytes
-                    // 成功瘦身，释放了 freedBytes 大小
-                } else {
-                    failedSize += item.size
-                    failedItems.append(item)
-                }
-                continue
-            }
-            
             let success = await deleteItem(item)
             if success {
                 cleanedSize += item.size
@@ -851,13 +761,10 @@ class JunkCleaner: ObservableObject {
             }
         }
         
-        // 如果有失败的项目（且不是瘦身失败的，瘦身失败通常不建议 sudo 强行破坏），尝试使用 sudo 权限删除
-        // 过滤掉 Universal Binaries 的 sudo 重试，因为 lipo 需要复杂参数，简单的 rm -rf 不适用
-        let retryItems = failedItems.filter { $0.type != .universalBinaries }
-        
-        if !retryItems.isEmpty {
-            let failedPaths = retryItems.map { $0.path.path }
-            let (sudoCleanedSize, sudoSuccess) = await cleanWithAdminPrivileges(paths: failedPaths, items: retryItems)
+        // 如果有失败的项目，尝试使用 sudo 权限删除
+        if !failedItems.isEmpty {
+            let failedPaths = failedItems.map { $0.path.path }
+            let (sudoCleanedSize, sudoSuccess) = await cleanWithAdminPrivileges(paths: failedPaths, items: failedItems)
             if sudoSuccess {
                 cleanedSize += sudoCleanedSize
                 failedSize -= sudoCleanedSize
@@ -878,86 +785,8 @@ class JunkCleaner: ObservableObject {
         return (cleanedSize, failedSize, needsAdmin)
     }
     
-    /// 瘦身通用二进制文件
-    /// 返回值: 释放的字节数 (0 表示失败)
-    private func thinUniversalBinary(_ item: JunkItem) async -> Int64 {
-        let path = item.path.path
-        let fileManager = FileManager.default
-        
-        // 1. 记录原始大小
-        guard let attrsBefore = try? fileManager.attributesOfItem(atPath: path),
-              let sizeBefore = attrsBefore[.size] as? Int64 else { return 0 }
-        
-        // 2. 获取当前架构
-        var currentArch = "x86_64"
-        #if arch(arm64)
-        currentArch = "arm64"
-        #endif
-        
-        let tempPath = path + ".thin"
-        
-        // 3. 运行 lipo 命令
-        let lipoTask = Process()
-        lipoTask.launchPath = "/usr/bin/lipo"
-        lipoTask.arguments = [path, "-thin", currentArch, "-output", tempPath]
-        
-        do {
-            try lipoTask.run()
-            lipoTask.waitUntilExit()
-            
-            if lipoTask.terminationStatus == 0 && fileManager.fileExists(atPath: tempPath) {
-                // lipo 成功
-                
-                // 4. 替换原文件
-                let backupPath = path + ".bak"
-                try? fileManager.moveItem(atPath: path, toPath: backupPath) // 备份
-                
-                try fileManager.moveItem(atPath: tempPath, toPath: path)
-                try? fileManager.removeItem(atPath: backupPath) // 删除备份
-                
-                // 5. 重新签名
-                if !reSignApp(path) {
-                    print("Resign failed for \(path). Reverting...")
-                    // 签名失败，回滚
-                    try? fileManager.removeItem(atPath: path) // 删除失败的瘦身文件
-                    try? fileManager.moveItem(atPath: backupPath, toPath: path) // 恢复备份
-                    return 0
-                }
-                
-                // 成功，删除备份
-                try? fileManager.removeItem(atPath: backupPath)
-                
-                // 6. 计算新大小并返回差值
-                if let attrsAfter = try? fileManager.attributesOfItem(atPath: path),
-                   let sizeAfter = attrsAfter[.size] as? Int64 {
-                    let freed = max(0, sizeBefore - sizeAfter)
-                    return freed
-                }
-                
-                // 如果无法读取新大小，返回估算值（或 0）
-                return 0
-            }
-        } catch {
-            print("Lipo failed: \(error)")
-        }
-        
-        return 0
-    }
-    
-    /// 重新签名 App (Ad-hoc)
-    private func reSignApp(_ binaryPath: String) -> Bool {
-        let task = Process()
-        task.launchPath = "/usr/bin/codesign"
-        task.arguments = ["--force", "--sign", "-", binaryPath]
-        
-        do {
-            try task.run()
-            task.waitUntilExit()
-            return task.terminationStatus == 0
-        } catch {
-            return false
-        }
-    }
+    /// 检查应用是否可以安全瘦身
+    // canSafelyThinApp、thinUniversalBinary、reSignApp 已移除 - 通用二进制瘦身功能已禁用
     
     /// 删除单个项目
     private func deleteItem(_ item: JunkItem) async -> Bool {

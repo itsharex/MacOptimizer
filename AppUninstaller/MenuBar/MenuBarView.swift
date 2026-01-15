@@ -40,9 +40,9 @@ struct MenuBarView: View {
                 HStack {
                     Image(systemName: "checkmark.shield.fill")
                         .foregroundColor(.green)
-                    Text("防护服务提供者：")
+                    Text("安全防护：")
                         .font(.system(size: 12))
-                    Text("moonlock")
+                    Text("Mac优化大师")
                         .font(.system(size: 12, weight: .bold))
                     Spacer()
                     Text("受保护")
@@ -193,7 +193,7 @@ struct RecommendationCard: View {
                 .foregroundColor(.black)
                 .padding(.horizontal, 8)
                 .padding(.vertical, 4)
-                .background(Color.yellow) // CleanMyMac yellow
+                .background(Color.yellow) // Warning highlight color
                 .cornerRadius(4)
         }
         .padding(10)

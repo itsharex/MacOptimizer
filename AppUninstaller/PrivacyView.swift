@@ -175,29 +175,40 @@ struct PrivacyView: View {
                 }
                 .frame(maxWidth: 500)
                 
-                // 右侧大停止标志 (Design Image 1)
+                // 右侧大停止标志 - 使用 yinsi.png
                 ZStack {
-                    PolygonShape(sides: 8)
-                        .fill(
-                            LinearGradient(
-                                colors: [
-                                    Color(red: 1.0, green: 0.6, blue: 0.8), // 亮粉
-                                    Color(red: 0.8, green: 0.2, blue: 0.5)  // 深粉
-                                ],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
+                    if let imagePath = Bundle.main.path(forResource: "yinsi", ofType: "png"),
+                       let nsImage = NSImage(contentsOfFile: imagePath) {
+                        Image(nsImage: nsImage)
+                            .resizable()
+                            .aspectRatio(contentMode: .fit)
+                            .frame(width: 320, height: 320)
+                            .shadow(color: Color.black.opacity(0.3), radius: 20, x: 0, y: 10)
+                    } else {
+                        // Fallback: 八边形停止标志
+                        PolygonShape(sides: 8)
+                            .fill(
+                                LinearGradient(
+                                    colors: [
+                                        Color(red: 1.0, green: 0.6, blue: 0.8), // 亮粉
+                                        Color(red: 0.8, green: 0.2, blue: 0.5)  // 深粉
+                                    ],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
                             )
-                        )
-                        .frame(width: 240, height: 240)
-                        .shadow(color: Color.black.opacity(0.3), radius: 20, x: 0, y: 10)
-                        .overlay(
-                            PolygonShape(sides: 8)
-                                .stroke(Color.white.opacity(0.2), lineWidth: 2)
-                        )
-                    
-                    Image(systemName: "hand.raised.fill")
-                        .font(.system(size: 100))
-                        .foregroundColor(.white.opacity(0.9))
+                            .frame(width: 280, height: 280)
+                            .shadow(color: Color.black.opacity(0.3), radius: 20, x: 0, y: 10)
+                            .overlay(
+                                PolygonShape(sides: 8)
+                                    .stroke(Color.white.opacity(0.2), lineWidth: 2)
+                            )
+                            .overlay(
+                                Image(systemName: "hand.raised.fill")
+                                    .font(.system(size: 100))
+                                    .foregroundColor(.white.opacity(0.9))
+                            )
+                    }
                 }
             }
             

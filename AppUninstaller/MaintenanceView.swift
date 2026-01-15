@@ -156,6 +156,14 @@ enum MaintenanceTask: String, CaseIterable, Identifiable {
     }
 }
 
+// MARK: - Task Result Model
+struct TaskResult {
+    let task: MaintenanceTask
+    let success: Bool
+    let message: String
+    let details: String?
+}
+
 // MARK: - Maintenance Service
 class MaintenanceService: ObservableObject {
     static let shared = MaintenanceService()
@@ -165,6 +173,17 @@ class MaintenanceService: ObservableObject {
     @Published var isRunning = false
     @Published var currentRunningTask: MaintenanceTask?
     @Published var completedTasks: Set<MaintenanceTask> = []
+    @Published var taskResults: [TaskResult] = []
+    
+    // 确认对话框状态
+    @Published var showConfirmDialog = false
+    @Published var confirmDialogTask: MaintenanceTask?
+    @Published var confirmDialogMessage: String = ""
+    @Published var userConfirmed = false
+    
+    // 时间机器快照列表
+    @Published var timeMachineSnapshots: [String] = []
+    @Published var showSnapshotSelector = false
     
     private init() {}
     
@@ -225,14 +244,44 @@ class MaintenanceService: ObservableObject {
         await MainActor.run {
             isRunning = true
             completedTasks = []
+            taskResults = []
         }
         
         for task in MaintenanceTask.allCases {
             if selectedTasks.contains(task) {
                 await MainActor.run { currentRunningTask = task }
-                await executeTask(task)
+                
+                // 检查是否需要用户确认
+                if needsConfirmation(task) {
+                    await requestConfirmation(for: task)
+                    
+                    // 等待用户确认
+                    var waitTime = 0
+                    while showConfirmDialog && waitTime < 30 {
+                        try? await Task.sleep(nanoseconds: 1_000_000_000)
+                        waitTime += 1
+                    }
+                    
+                    // 如果用户取消，跳过此任务
+                    if !userConfirmed {
+                        await MainActor.run {
+                            taskResults.append(TaskResult(
+                                task: task,
+                                success: false,
+                                message: "已跳过",
+                                details: "用户取消操作"
+                            ))
+                        }
+                        continue
+                    }
+                }
+                
+                // 执行任务
+                let result = await executeTask(task)
+                
                 await MainActor.run {
                     completedTasks.insert(task)
+                    taskResults.append(result)
                     UserDefaults.standard.set(Date(), forKey: task.lastRunKey)
                 }
             }
@@ -244,29 +293,82 @@ class MaintenanceService: ObservableObject {
         }
     }
     
-    private func executeTask(_ task: MaintenanceTask) async {
+    // 检查任务是否需要用户确认
+    private func needsConfirmation(_ task: MaintenanceTask) -> Bool {
         switch task {
-        case .freeRam:
-            await freeRAM()
-        case .purgeableSpace:
-            await freePurgeableSpace()
-        case .flushDns:
-            await flushDNS()
-        case .speedUpMail:
-            await speedUpMail()
-        case .rebuildSpotlight:
-            await rebuildSpotlight()
-        case .repairPermissions:
-            await repairPermissions()
-        case .repairApps:
-            await repairApps()
-        case .timeMachine:
-            await cleanTimeMachine()
+        case .repairApps, .timeMachine:
+            return true  // 高风险操作需要确认
+        default:
+            return false
         }
     }
     
+    // 请求用户确认
+    @MainActor
+    private func requestConfirmation(for task: MaintenanceTask) async {
+        let message: String
+        switch task {
+        case .repairApps:
+            message = "此操作将清理所有应用的保存状态和崩溃日志。这是安全的，但某些应用可能需要重新登录。"
+        case .timeMachine:
+            message = "此操作将删除所有旧的时间机器快照（保留最新的一个）。这将释放磁盘空间，但无法恢复。"
+        default:
+            message = "是否继续执行此操作？"
+        }
+        
+        confirmDialogTask = task
+        confirmDialogMessage = message
+        userConfirmed = false
+        showConfirmDialog = true
+    }
+    
+    // 用户确认操作
+    func confirmAction() {
+        userConfirmed = true
+        showConfirmDialog = false
+    }
+    
+    // 用户取消操作
+    func cancelAction() {
+        userConfirmed = false
+        showConfirmDialog = false
+    }
+    
+    private func executeTask(_ task: MaintenanceTask) async -> TaskResult {
+        let result: (success: Bool, message: String, details: String?)
+        
+        switch task {
+        case .freeRam:
+            result = await freeRAM()
+        case .purgeableSpace:
+            result = await freePurgeableSpace()
+        case .flushDns:
+            result = await flushDNS()
+        case .speedUpMail:
+            result = await speedUpMail()
+        case .rebuildSpotlight:
+            result = await rebuildSpotlight()
+        case .repairPermissions:
+            result = await repairPermissions()
+        case .repairApps:
+            result = await repairApps()
+        case .timeMachine:
+            result = await cleanTimeMachine()
+        }
+        
+        return TaskResult(
+            task: task,
+            success: result.success,
+            message: result.message,
+            details: result.details
+        )
+    }
+    
     // MARK: - 释放 RAM (使用 purge 命令)
-    private func freeRAM() async {
+    private func freeRAM() async -> (success: Bool, message: String, details: String?) {
+        // 获取执行前的内存使用情况
+        let beforeMemory = getMemoryUsage()
+        
         // 方法1: 使用 memory_pressure 触发内存回收
         let memPressure = Process()
         memPressure.executableURL = URL(fileURLWithPath: "/usr/bin/memory_pressure")
@@ -282,10 +384,44 @@ class MaintenanceService: ObservableObject {
         purge.executableURL = URL(fileURLWithPath: "/usr/sbin/purge")
         try? purge.run()
         purge.waitUntilExit()
+        
+        // 等待一下让系统更新内存统计
+        try? await Task.sleep(nanoseconds: 1_000_000_000)
+        
+        // 获取执行后的内存使用情况
+        let afterMemory = getMemoryUsage()
+        let freedMemoryGB = max(0, beforeMemory - afterMemory)
+        
+        if freedMemoryGB > 0.1 {
+            return (true, "已释放 \(String(format: "%.2f", freedMemoryGB)) GB 内存", "内存压力已降低")
+        } else {
+            return (true, "内存优化完成", "系统内存已经比较充足")
+        }
+    }
+    
+    // 获取内存使用情况（GB）
+    private func getMemoryUsage() -> Double {
+        var stats = vm_statistics64()
+        var count = mach_msg_type_number_t(MemoryLayout<vm_statistics64>.stride / MemoryLayout<integer_t>.stride)
+        
+        let result = withUnsafeMutablePointer(to: &stats) {
+            $0.withMemoryRebound(to: integer_t.self, capacity: Int(count)) {
+                host_statistics64(mach_host_self(), HOST_VM_INFO64, $0, &count)
+            }
+        }
+        
+        guard result == KERN_SUCCESS else { return 0 }
+        
+        let pageSize = Double(vm_kernel_page_size)
+        let usedMemory = Double(stats.active_count + stats.wire_count) * pageSize
+        return usedMemory / (1024 * 1024 * 1024) // Convert to GB
     }
     
     // MARK: - 释放可清除空间
-    private func freePurgeableSpace() async {
+    private func freePurgeableSpace() async -> (success: Bool, message: String, details: String?) {
+        var totalCleaned: Int64 = 0
+        var filesDeleted = 0
+        
         // 1. 清理系统临时文件
         let tempDirs = [
             FileManager.default.temporaryDirectory.path,
@@ -293,23 +429,32 @@ class MaintenanceService: ObservableObject {
         ]
         
         for dir in tempDirs {
-            let cleanup = Process()
-            cleanup.executableURL = URL(fileURLWithPath: "/usr/bin/find")
-            cleanup.arguments = [dir, "-type", "f", "-atime", "+7", "-delete"]
-            try? cleanup.run()
-            cleanup.waitUntilExit()
+            if let (size, count) = getDirectorySize(dir, olderThanDays: 7) {
+                let cleanup = Process()
+                cleanup.executableURL = URL(fileURLWithPath: "/usr/bin/find")
+                cleanup.arguments = [dir, "-type", "f", "-atime", "+7", "-delete"]
+                try? cleanup.run()
+                cleanup.waitUntilExit()
+                
+                totalCleaned += size
+                filesDeleted += count
+            }
         }
         
         // 2. 清理用户缓存中的旧文件
         let userCaches = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent("Library/Caches")
         
-        if let enumerator = FileManager.default.enumerator(at: userCaches, includingPropertiesForKeys: [.contentModificationDateKey]) {
+        if let enumerator = FileManager.default.enumerator(at: userCaches, includingPropertiesForKeys: [.contentModificationDateKey, .fileSizeKey]) {
             let oneWeekAgo = Date().addingTimeInterval(-7 * 24 * 3600)
             while let fileURL = enumerator.nextObject() as? URL {
                 if let modDate = try? fileURL.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate,
-                   modDate < oneWeekAgo {
-                    try? FileManager.default.removeItem(at: fileURL)
+                   modDate < oneWeekAgo,
+                   let size = try? fileURL.resourceValues(forKeys: [.fileSizeKey]).fileSize {
+                    if (try? FileManager.default.removeItem(at: fileURL)) != nil {
+                        totalCleaned += Int64(size)
+                        filesDeleted += 1
+                    }
                 }
             }
         }
@@ -319,10 +464,41 @@ class MaintenanceService: ObservableObject {
         purge.executableURL = URL(fileURLWithPath: "/usr/sbin/purge")
         try? purge.run()
         purge.waitUntilExit()
+        
+        let cleanedGB = Double(totalCleaned) / (1024 * 1024 * 1024)
+        if cleanedGB > 0.1 {
+            return (true, "已释放 \(String(format: "%.2f", cleanedGB)) GB 空间", "删除了 \(filesDeleted) 个旧文件")
+        } else {
+            return (true, "清理完成", "系统较为干净，未发现大量可清除文件")
+        }
+    }
+    
+    // 获取目录大小（仅统计超过指定天数的文件）
+    private func getDirectorySize(_ path: String, olderThanDays days: Int) -> (size: Int64, count: Int)? {
+        let cutoffDate = Date().addingTimeInterval(-Double(days) * 24 * 3600)
+        var totalSize: Int64 = 0
+        var fileCount = 0
+        
+        guard let enumerator = FileManager.default.enumerator(atPath: path) else { return nil }
+        
+        while let file = enumerator.nextObject() as? String {
+            let filePath = (path as NSString).appendingPathComponent(file)
+            if let attrs = try? FileManager.default.attributesOfItem(atPath: filePath),
+               let modDate = attrs[.modificationDate] as? Date,
+               modDate < cutoffDate,
+               let size = attrs[.size] as? Int64 {
+                totalSize += size
+                fileCount += 1
+            }
+        }
+        
+        return (totalSize, fileCount)
     }
     
     // MARK: - 刷新 DNS 缓存
-    private func flushDNS() async {
+    private func flushDNS() async -> (success: Bool, message: String, details: String?) {
+        var success = true
+        
         // 刷新 DNS 缓存
         let dscacheutil = Process()
         dscacheutil.executableURL = URL(fileURLWithPath: "/usr/bin/dscacheutil")
@@ -337,18 +513,20 @@ class MaintenanceService: ObservableObject {
         try? killall.run()
         killall.waitUntilExit()
         
-        // 额外: 清理 lookupd 缓存
-        let lookupd = Process()
-        lookupd.executableURL = URL(fileURLWithPath: "/usr/bin/dscacheutil")
-        lookupd.arguments = ["-flushcache"]
-        try? lookupd.run()
-        lookupd.waitUntilExit()
+        if killall.terminationStatus != 0 {
+            success = false
+        }
+        
+        return (success, "DNS 缓存已刷新", "网络连接问题应该得到解决")
     }
     
     // MARK: - 加速邮件 (优化 Mail 数据库)
-    private func speedUpMail() async {
+    private func speedUpMail() async -> (success: Bool, message: String, details: String?) {
         let mailDataPath = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent("Library/Mail")
+        
+        var dbOptimized = false
+        var cacheCleaned: Int64 = 0
         
         // 查找 Envelope Index 数据库文件
         let possiblePaths = [
@@ -373,6 +551,7 @@ class MaintenanceService: ObservableObject {
                 try? reindex.run()
                 reindex.waitUntilExit()
                 
+                dbOptimized = true
                 break
             }
         }
@@ -381,16 +560,30 @@ class MaintenanceService: ObservableObject {
         let mailDownloads = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent("Library/Mail Downloads")
         if FileManager.default.fileExists(atPath: mailDownloads.path) {
-            if let contents = try? FileManager.default.contentsOfDirectory(at: mailDownloads, includingPropertiesForKeys: nil) {
+            if let contents = try? FileManager.default.contentsOfDirectory(at: mailDownloads, includingPropertiesForKeys: [.fileSizeKey]) {
                 for item in contents {
+                    if let size = try? item.resourceValues(forKeys: [.fileSizeKey]).fileSize {
+                        cacheCleaned += Int64(size)
+                    }
                     try? FileManager.default.removeItem(at: item)
                 }
             }
         }
+        
+        if dbOptimized {
+            let cleanedMB = Double(cacheCleaned) / (1024 * 1024)
+            if cleanedMB > 1 {
+                return (true, "邮件已优化", "数据库已重建，清理了 \(String(format: "%.1f", cleanedMB)) MB 缓存")
+            } else {
+                return (true, "邮件已优化", "数据库已重建索引")
+            }
+        } else {
+            return (false, "未找到邮件数据库", "请确保已安装 Mail 应用")
+        }
     }
     
     // MARK: - 重建 Spotlight 索引
-    private func rebuildSpotlight() async {
+    private func rebuildSpotlight() async -> (success: Bool, message: String, details: String?) {
         // 重建用户主目录的 Spotlight 索引
         let homePath = FileManager.default.homeDirectoryForCurrentUser.path
         
@@ -400,17 +593,26 @@ class MaintenanceService: ObservableObject {
         try? mdutil.run()
         mdutil.waitUntilExit()
         
+        let success = mdutil.terminationStatus == 0
+        
         // 强制重新索引
         let mdimport = Process()
         mdimport.executableURL = URL(fileURLWithPath: "/usr/bin/mdimport")
         mdimport.arguments = [homePath]
         try? mdimport.run()
         // 不等待完成，因为索引需要很长时间
+        
+        if success {
+            return (true, "索引重建已启动", "Spotlight 将在后台重新索引您的文件")
+        } else {
+            return (false, "索引重建失败", "可能需要管理员权限")
+        }
     }
     
     // MARK: - 修复磁盘权限
-    private func repairPermissions() async {
+    private func repairPermissions() async -> (success: Bool, message: String, details: String?) {
         let homePath = FileManager.default.homeDirectoryForCurrentUser.path
+        var fixedCount = 0
         
         // 修复主目录权限
         let chmodHome = Process()
@@ -418,6 +620,7 @@ class MaintenanceService: ObservableObject {
         chmodHome.arguments = ["755", homePath]
         try? chmodHome.run()
         chmodHome.waitUntilExit()
+        if chmodHome.terminationStatus == 0 { fixedCount += 1 }
         
         // 修复 Library 目录权限
         let chmodLib = Process()
@@ -425,6 +628,7 @@ class MaintenanceService: ObservableObject {
         chmodLib.arguments = ["-R", "u+rwX", "\(homePath)/Library"]
         try? chmodLib.run()
         chmodLib.waitUntilExit()
+        if chmodLib.terminationStatus == 0 { fixedCount += 1 }
         
         // 修复常用目录权限
         let userDirs = ["Desktop", "Documents", "Downloads", "Pictures", "Movies", "Music"]
@@ -436,11 +640,13 @@ class MaintenanceService: ObservableObject {
                 chmod.arguments = ["700", dirPath]
                 try? chmod.run()
                 chmod.waitUntilExit()
+                if chmod.terminationStatus == 0 { fixedCount += 1 }
             }
         }
         
         // 修复 .ssh 目录权限 (如果存在)
         let sshPath = "\(homePath)/.ssh"
+        var sshFixed = false
         if FileManager.default.fileExists(atPath: sshPath) {
             let chmodSsh = Process()
             chmodSsh.executableURL = URL(fileURLWithPath: "/bin/chmod")
@@ -454,11 +660,16 @@ class MaintenanceService: ObservableObject {
             chmodKeys.arguments = ["600", "\(sshPath)/id_rsa", "\(sshPath)/id_ed25519"]
             try? chmodKeys.run()
             chmodKeys.waitUntilExit()
+            
+            sshFixed = true
         }
+        
+        let details = sshFixed ? "修复了 \(fixedCount) 个目录权限（包括 SSH）" : "修复了 \(fixedCount) 个目录权限"
+        return (true, "权限修复完成", details)
     }
     
     // MARK: - 清理时间机器快照
-    private func cleanTimeMachine() async {
+    private func cleanTimeMachine() async -> (success: Bool, message: String, details: String?) {
         // 列出所有本地快照
         let listTask = Process()
         listTask.executableURL = URL(fileURLWithPath: "/usr/bin/tmutil")
@@ -471,7 +682,9 @@ class MaintenanceService: ObservableObject {
         listTask.waitUntilExit()
         
         let data = pipe.fileHandleForReading.readDataToEndOfFile()
-        guard let output = String(data: data, encoding: .utf8) else { return }
+        guard let output = String(data: data, encoding: .utf8), !output.isEmpty else {
+            return (true, "无快照可删除", "未找到本地时间机器快照")
+        }
         
         // 解析快照日期
         let lines = output.components(separatedBy: "\n")
@@ -487,6 +700,12 @@ class MaintenanceService: ObservableObject {
             }
         }
         
+        if snapshotDates.count <= 1 {
+            return (true, "无需清理", "只有一个快照，已保留")
+        }
+        
+        var deletedCount = 0
+        
         // 删除所有本地快照 (保留最新的一个)
         for date in snapshotDates.dropLast() {
             let deleteTask = Process()
@@ -494,27 +713,49 @@ class MaintenanceService: ObservableObject {
             deleteTask.arguments = ["deletelocalsnapshots", date]
             try? deleteTask.run()
             deleteTask.waitUntilExit()
+            
+            if deleteTask.terminationStatus == 0 {
+                deletedCount += 1
+            }
+        }
+        
+        if deletedCount > 0 {
+            return (true, "已删除 \(deletedCount) 个快照", "保留了最新的快照")
+        } else {
+            return (false, "删除失败", "可能需要管理员权限")
         }
     }
     
     // MARK: - 修复应用程序
-    private func repairApps() async {
+    private func repairApps() async -> (success: Bool, message: String, details: String?) {
         let home = FileManager.default.homeDirectoryForCurrentUser
         let fileManager = FileManager.default
+        var itemsFixed = 0
+        var spaceFreed: Int64 = 0
         
         // 1. 清理应用崩溃日志
         let crashReportsPath = home.appendingPathComponent("Library/Logs/DiagnosticReports")
-        if let contents = try? fileManager.contentsOfDirectory(at: crashReportsPath, includingPropertiesForKeys: nil) {
+        if let contents = try? fileManager.contentsOfDirectory(at: crashReportsPath, includingPropertiesForKeys: [.fileSizeKey]) {
             for item in contents where item.pathExtension == "crash" || item.pathExtension == "ips" {
-                try? fileManager.removeItem(at: item)
+                if let size = try? item.resourceValues(forKeys: [.fileSizeKey]).fileSize {
+                    spaceFreed += Int64(size)
+                }
+                if (try? fileManager.removeItem(at: item)) != nil {
+                    itemsFixed += 1
+                }
             }
         }
         
         // 2. 清理损坏的 Saved Application State
         let savedStatePath = home.appendingPathComponent("Library/Saved Application State")
-        if let contents = try? fileManager.contentsOfDirectory(at: savedStatePath, includingPropertiesForKeys: nil) {
+        if let contents = try? fileManager.contentsOfDirectory(at: savedStatePath, includingPropertiesForKeys: [.fileSizeKey]) {
             for item in contents {
-                try? fileManager.removeItem(at: item)
+                if let size = try? item.resourceValues(forKeys: [.totalFileSizeKey]).totalFileSize {
+                    spaceFreed += Int64(size)
+                }
+                if (try? fileManager.removeItem(at: item)) != nil {
+                    itemsFixed += 1
+                }
             }
         }
         
@@ -523,9 +764,14 @@ class MaintenanceService: ObservableObject {
         if let apps = try? fileManager.contentsOfDirectory(at: containersPath, includingPropertiesForKeys: nil) {
             for app in apps {
                 let tempPath = app.appendingPathComponent("Data/tmp")
-                if let tempContents = try? fileManager.contentsOfDirectory(at: tempPath, includingPropertiesForKeys: nil) {
+                if let tempContents = try? fileManager.contentsOfDirectory(at: tempPath, includingPropertiesForKeys: [.fileSizeKey]) {
                     for item in tempContents {
-                        try? fileManager.removeItem(at: item)
+                        if let size = try? item.resourceValues(forKeys: [.fileSizeKey]).fileSize {
+                            spaceFreed += Int64(size)
+                        }
+                        if (try? fileManager.removeItem(at: item)) != nil {
+                            itemsFixed += 1
+                        }
                     }
                 }
             }
@@ -550,10 +796,15 @@ class MaintenanceService: ObservableObject {
             home.appendingPathComponent("Library/Caches/com.apple.nsservicescache.plist"),
         ]
         for path in cachesPaths {
+            if let size = try? path.resourceValues(forKeys: [.totalFileSizeKey]).totalFileSize {
+                spaceFreed += Int64(size)
+            }
             try? fileManager.removeItem(at: path)
         }
         
-        print("[repairApps] Crash logs cleaned, saved states cleared, Launch Services reset")
+        let freedMB = Double(spaceFreed) / (1024 * 1024)
+        let details = "清理了 \(itemsFixed) 个问题项，释放 \(String(format: "%.1f", freedMB)) MB 空间"
+        return (true, "应用修复完成", details)
     }
 }
 
@@ -576,15 +827,17 @@ struct MaintenanceView: View {
                 finishedView
             }
         }
-
-    .frame(maxWidth: .infinity, maxHeight: .infinity)
-    .onAppear {
-        // Always start at landing page unless currently running a task
-        if viewState != 1 {
-            viewState = 3
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .onAppear {
+            // Always start at landing page unless currently running a task
+            if viewState != 1 {
+                viewState = 3
+            }
+        }
+        .sheet(isPresented: $service.showConfirmDialog) {
+            MaintenanceConfirmDialog(service: service, loc: loc)
         }
     }
-}
     
     // MARK: - Selection View
     var selectionView: some View {
@@ -865,39 +1118,97 @@ struct MaintenanceView: View {
     
     // MARK: - Finished View
     var finishedView: some View {
-        VStack(spacing: 24) {
+        VStack(spacing: 0) {
             Spacer()
             
+            // 成功图标
             ZStack {
                 Circle()
                     .fill(Color.green.opacity(0.2))
-                    .frame(width: 120, height: 120)
+                    .frame(width: 100, height: 100)
                 Image(systemName: "checkmark")
-                    .font(.system(size: 50, weight: .bold))
+                    .font(.system(size: 44, weight: .bold))
                     .foregroundColor(.green)
             }
+            .padding(.bottom, 20)
             
-            Text(loc.currentLanguage == .chinese ? "完成！" : "Done!")
-                .font(.system(size: 36, weight: .bold))
+            Text(loc.currentLanguage == .chinese ? "维护完成！" : "Maintenance Complete!")
+                .font(.system(size: 28, weight: .bold))
                 .foregroundColor(.white)
+                .padding(.bottom, 10)
             
-            HStack(spacing: 8) {
-                Image(systemName: "checkmark.circle.fill")
-                    .foregroundColor(.green)
-                Text(loc.currentLanguage == .chinese
-                     ? "\(service.completedTasks.count) 个任务已完成"
-                     : "\(service.completedTasks.count) tasks completed")
-                    .font(.headline)
-                    .foregroundColor(.white)
+            Text(loc.currentLanguage == .chinese
+                 ? "\(service.completedTasks.count) 个任务已执行"
+                 : "\(service.completedTasks.count) tasks executed")
+                .font(.system(size: 14))
+                .foregroundColor(.white.opacity(0.7))
+                .padding(.bottom, 30)
+            
+            // 详细结果列表
+            ScrollView {
+                VStack(spacing: 10) {
+                    ForEach(service.taskResults, id: \.task.rawValue) { result in
+                        HStack(spacing: 12) {
+                            // 状态图标
+                            ZStack {
+                                RoundedRectangle(cornerRadius: 5)
+                                    .fill(result.task.iconColor)
+                                    .frame(width: 32, height: 32)
+                                
+                                Image(systemName: result.task.icon)
+                                    .font(.system(size: 14))
+                                    .foregroundColor(.white)
+                            }
+                            
+                            // 任务信息
+                            VStack(alignment: .leading, spacing: 3) {
+                                HStack {
+                                    Text(loc.currentLanguage == .chinese ? result.task.title : result.task.englishTitle)
+                                        .font(.system(size: 13, weight: .medium))
+                                        .foregroundColor(.white)
+                                    
+                                    Spacer()
+                                    
+                                    // 成功/失败状态
+                                    HStack(spacing: 4) {
+                                        Image(systemName: result.success ? "checkmark.circle.fill" : "xmark.circle.fill")
+                                            .foregroundColor(result.success ? .green : .red)
+                                            .font(.system(size: 12))
+                                        
+                                        Text(result.message)
+                                            .font(.system(size: 11))
+                                            .foregroundColor(result.success ? .green : .red)
+                                    }
+                                }
+                                
+                                if let details = result.details {
+                                    Text(details)
+                                        .font(.system(size: 11))
+                                        .foregroundColor(.white.opacity(0.6))
+                                        .lineLimit(2)
+                                }
+                            }
+                        }
+                        .padding(12)
+                        .background(Color.white.opacity(0.08))
+                        .cornerRadius(8)
+                    }
+                }
+                .padding(.horizontal, 40)
             }
+            .frame(maxWidth: 600, maxHeight: 300)
             
             Spacer()
             
-            Button(action: { viewState = 0 }) {
-                Text(loc.currentLanguage == .chinese ? "返回" : "Back")
-                    .font(.headline)
+            // 返回按钮
+            Button(action: { 
+                service.taskResults.removeAll()
+                viewState = 0 
+            }) {
+                Text(loc.currentLanguage == .chinese ? "完成" : "Done")
+                    .font(.system(size: 14, weight: .semibold))
                     .foregroundColor(.white)
-                    .padding(.horizontal, 32)
+                    .padding(.horizontal, 40)
                     .padding(.vertical, 12)
                     .background(Color.white.opacity(0.15))
                     .cornerRadius(8)
@@ -905,6 +1216,7 @@ struct MaintenanceView: View {
             .buttonStyle(.plain)
             .padding(.bottom, 50)
         }
+        .background(BackgroundStyles.privacy)
     }
     // MARK: - Landing View
     var landingView: some View {
@@ -917,91 +1229,331 @@ struct MaintenanceLandingView: View {
     @ObservedObject private var loc = LocalizationManager.shared
     
     var body: some View {
-        GeometryReader { geometry in
-            HStack(spacing: 0) {
+        ZStack {
+            HStack(spacing: 60) {
                 // Left Content
-                VStack(alignment: .leading, spacing: 32) {
-                    VStack(alignment: .leading, spacing: 12) {
-                        Text(loc.currentLanguage == .chinese ? "维护" : "Maintenance")
-                            .font(.system(size: 32, weight: .bold))
+                VStack(alignment: .leading, spacing: 30) {
+                    // Branding Header
+                    HStack(spacing: 8) {
+                        Text(loc.currentLanguage == .chinese ? "系统维护" : "System Maintenance")
+                            .font(.system(size: 16, weight: .medium))
                             .foregroundColor(.white)
                         
-                        Text(loc.currentLanguage == .chinese ? "运行一组可快速优化系统性能的脚本。" : "Run a set of scripts to quickly optimize system performance.")
-                            .font(.system(size: 14))
-                            .foregroundColor(.white.opacity(0.8))
-                            .lineLimit(2)
+                        // Maintenance Icon
+                        HStack(spacing: 4) {
+                            Image(systemName: "wrench.and.screwdriver.fill")
+                            Text(loc.currentLanguage == .chinese ? "快速修复" : "Quick Fix")
+                                .font(.system(size: 20, weight: .heavy))
+                        }
+                        .foregroundColor(.white)
                     }
                     
+                    Text(loc.currentLanguage == .chinese ? 
+                         "运行一组可快速优化系统性能的脚本。\n上次维护时间：从未" :
+                         "Run a set of scripts to quickly optimize system performance.\nLast maintenance: Never")
+                        .font(.system(size: 13))
+                        .foregroundColor(.white.opacity(0.7))
+                        .lineSpacing(4)
+                    
+                    // Feature Rows
                     VStack(alignment: .leading, spacing: 24) {
-                        ShredderFeatureRow(icon: "gauge", title: loc.currentLanguage == .chinese ? "提高驱动器性能" : "Improve Drive Performance", description: loc.currentLanguage == .chinese ? "保护磁盘，确保其文件系统和物理状态良好。" : "Maintain the disk to ensure its file system and physical health are good.")
-                        ShredderFeatureRow(icon: "exclamationmark.triangle", title: loc.currentLanguage == .chinese ? "消除应用程序错误" : "Fix Application Errors", description: loc.currentLanguage == .chinese ? "通过修改权限以及运行维护脚本解决不适当的应用程序行为。" : "Fix improper application behavior by repairing permissions and running maintenance scripts.")
-                        ShredderFeatureRow(icon: "magnifyingglass", title: loc.currentLanguage == .chinese ? "提高搜索性能" : "Improve Search Performance", description: loc.currentLanguage == .chinese ? "为您的“聚焦”数据库重新建立索引，提高搜索速度和质量。" : "Reindex your Spotlight database to improve search speed and quality.")
+                        featureRow(
+                            icon: "gauge",
+                            title: loc.currentLanguage == .chinese ? "提高驱动器性能" : "Improve Drive Performance",
+                            desc: loc.currentLanguage == .chinese ? "保护磁盘，确保其文件系统和物理状态良好。" : "Maintain the disk to ensure its file system and physical health are good."
+                        )
+                        
+                        featureRow(
+                            icon: "exclamationmark.triangle",
+                            title: loc.currentLanguage == .chinese ? "消除应用程序错误" : "Fix Application Errors",
+                            desc: loc.currentLanguage == .chinese ? "通过修改权限以及运行维护脚本解决不适当的应用程序行为。" : "Fix improper application behavior by repairing permissions and running maintenance scripts."
+                        )
+                        
+                        featureRow(
+                            icon: "magnifyingglass",
+                            title: loc.currentLanguage == .chinese ? "提高搜索性能" : "Improve Search Performance",
+                            desc: loc.currentLanguage == .chinese ? "为您的\"聚焦\"数据库重新建立索引，提高搜索速度和质量。" : "Reindex your Spotlight database to improve search speed and quality."
+                        )
                     }
                     
+                    // View Tasks Button
                     Button(action: { viewState = 0 }) {
                         Text(loc.currentLanguage == .chinese ? "查看 7 个任务..." : "View 7 Tasks...")
-                            .font(.system(size: 14, weight: .semibold))
-                            .padding(.horizontal, 24)
-                            .padding(.vertical, 10)
-                            .background(Color.blue) // Use Blue button
-                            .foregroundColor(.white)
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundColor(.black)
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 8)
+                            .background(Color(hex: "4DDEE8")) // Teal
                             .cornerRadius(6)
                     }
                     .buttonStyle(.plain)
-                    .shadow(radius: 5)
+                    .padding(.top, 10)
                 }
                 .frame(maxWidth: 400)
-                .padding(.leading, 60)
                 
-                Spacer()
-                
-                // Right Icon (Pink Checklist)
+                // Right Icon - Maintenance Visual
                 ZStack {
-                    RoundedRectangle(cornerRadius: 30)
-                        .fill(
-                            LinearGradient(
-                                colors: [Color(red: 0.8, green: 0.4, blue: 0.7), Color(red: 0.6, green: 0.2, blue: 0.8)],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            )
-                        )
-                        .frame(width: 300, height: 350)
-                        .rotationEffect(.degrees(-8))
-                        .shadow(radius: 20)
-                    
-                    // Checklist Items (Visual)
-                    VStack(spacing: 25) {
-                        ForEach(0..<3) { i in
-                            HStack(spacing: 15) {
-                                RoundedRectangle(cornerRadius: 8) // Checkbox
-                                    .fill(Color.white)
-                                    .frame(width: 40, height: 40)
-                                    .overlay(
-                                        Image(systemName: "checkmark")
-                                            .font(.system(size: 24, weight: .bold))
-                                            .foregroundColor(Color(red: 0.6, green: 0.2, blue: 0.8))
+                    if let path = Bundle.main.path(forResource: "weihu", ofType: "png"),
+                       let nsImage = NSImage(contentsOfFile: path) {
+                        Image(nsImage: nsImage)
+                            .resizable()
+                            .aspectRatio(contentMode: .fit)
+                            .frame(width: 320, height: 320)
+                            .shadow(color: Color.black.opacity(0.3), radius: 20, y: 10)
+                    } else {
+                        // Fallback: Pink Checklist
+                        ZStack {
+                            RoundedRectangle(cornerRadius: 30)
+                                .fill(
+                                    LinearGradient(
+                                        colors: [Color(hex: "C86FC9"), Color(hex: "9933CC")],
+                                        startPoint: .topLeading,
+                                        endPoint: .bottomTrailing
                                     )
-                                
-                                RoundedRectangle(cornerRadius: 6) // Line
-                                    .fill(Color.white.opacity(0.4))
-                                    .frame(width: 140, height: 12)
+                                )
+                                .frame(width: 280, height: 280)
+                                .shadow(color: Color.black.opacity(0.3), radius: 20, y: 10)
+                            
+                            // Checklist Items (Visual)
+                            VStack(spacing: 20) {
+                                ForEach(0..<3) { i in
+                                    HStack(spacing: 12) {
+                                        RoundedRectangle(cornerRadius: 6) // Checkbox
+                                            .fill(Color.white)
+                                            .frame(width: 30, height: 30)
+                                            .overlay(
+                                                Image(systemName: "checkmark")
+                                                    .font(.system(size: 18, weight: .bold))
+                                                    .foregroundColor(Color(hex: "9933CC"))
+                                            )
+                                        
+                                        RoundedRectangle(cornerRadius: 4) // Line
+                                            .fill(Color.white.opacity(0.4))
+                                            .frame(width: 100, height: 10)
+                                    }
+                                }
                             }
                         }
                     }
-                    .rotationEffect(.degrees(-8))
-                    
-                    // Wrench
-                    Image(systemName: "wrench.navigational.fill") // or wrench.adjustable
-                        .resizable()
-                        .aspectRatio(contentMode: .fit)
-                        .frame(width: 120, height: 120)
-                        .foregroundColor(.white)
-                        .shadow(radius: 10)
-                        .offset(x: 100, y: 100)
                 }
-                .padding(.trailing, 60)
+            }
+            .padding(.horizontal, 40)
+            .padding(.bottom, 50)
+            
+            // Bottom Floating Button
+            VStack {
+                Spacer()
+                Button(action: { viewState = 0 }) {
+                    ZStack {
+                        Circle()
+                            .stroke(LinearGradient(
+                                colors: [.white.opacity(0.5), .white.opacity(0.1)],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            ), lineWidth: 2)
+                            .frame(width: 84, height: 84)
+                        
+                        Circle()
+                            .fill(Color.white.opacity(0.2))
+                            .frame(width: 74, height: 74)
+                            .shadow(color: Color.black.opacity(0.3), radius: 10, y: 5)
+                        
+                        Text(loc.currentLanguage == .chinese ? "开始" : "Start")
+                            .font(.system(size: 16, weight: .medium))
+                            .foregroundColor(.white)
+                    }
+                }
+                .buttonStyle(.plain)
+                .padding(.bottom, 40)
+                .transition(.scale.combined(with: .opacity))
             }
         }
-        .background(BackgroundStyles.privacy)
+    }
+    
+    // MARK: - Feature Row Helper
+    private func featureRow(icon: String, title: String, desc: String) -> some View {
+        HStack(alignment: .top, spacing: 16) {
+            Image(systemName: icon)
+                .font(.system(size: 24, weight: .light))
+                .foregroundColor(.white.opacity(0.8))
+                .frame(width: 32, height: 32)
+            
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title)
+                    .font(.system(size: 15, weight: .medium))
+                    .foregroundColor(.white)
+                Text(desc)
+                    .font(.system(size: 12))
+                    .foregroundColor(.white.opacity(0.6))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+}
+
+// MARK: - Maintenance Confirmation Dialog
+struct MaintenanceConfirmDialog: View {
+    @ObservedObject var service: MaintenanceService
+    @ObservedObject var loc: LocalizationManager
+    @Environment(\.dismiss) var dismiss
+    
+    var body: some View {
+        VStack(spacing: 0) {
+            // Header
+            HStack {
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(spacing: 8) {
+                        // 警告图标
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .foregroundColor(.orange)
+                            .font(.system(size: 20))
+                        
+                        Text(loc.currentLanguage == .chinese ? "确认操作" : "Confirm Action")
+                            .font(.system(size: 18, weight: .bold))
+                            .foregroundColor(.primary)
+                    }
+                    
+                    if let task = service.confirmDialogTask {
+                        Text(loc.currentLanguage == .chinese ? task.title : task.englishTitle)
+                            .font(.system(size: 14, weight: .medium))
+                            .foregroundColor(.secondary)
+                    }
+                }
+                
+                Spacer()
+                
+                Button(action: {
+                    service.cancelAction()
+                    dismiss()
+                }) {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 20))
+                        .foregroundColor(.secondary)
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(.horizontal, 24)
+            .padding(.top, 24)
+            .padding(.bottom, 16)
+            
+            Divider()
+            
+            // Warning Banner
+            HStack(spacing: 12) {
+                Image(systemName: "info.circle.fill")
+                    .foregroundColor(.orange)
+                    .font(.system(size: 16))
+                
+                Text(service.confirmDialogMessage)
+                    .font(.system(size: 13))
+                    .foregroundColor(.primary)
+                    .fixedSize(horizontal: false, vertical: true)
+                
+                Spacer()
+            }
+            .padding(.horizontal, 24)
+            .padding(.vertical, 16)
+            .background(Color.orange.opacity(0.1))
+            
+            // Task Details
+            VStack(alignment: .leading, spacing: 12) {
+                if let task = service.confirmDialogTask {
+                    Text(loc.currentLanguage == .chinese ? "将要执行的操作：" : "Operations to perform:")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundColor(.primary)
+                    
+                    VStack(alignment: .leading, spacing: 8) {
+                        ForEach(getTaskOperations(task), id: \.self) { operation in
+                            HStack(alignment: .top, spacing: 6) {
+                                Text("•")
+                                    .foregroundColor(.secondary)
+                                Text(operation)
+                                    .font(.system(size: 12))
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+                    }
+                }
+            }
+            .padding(.horizontal, 24)
+            .padding(.vertical, 16)
+            
+            Divider()
+            
+            // Footer Actions
+            HStack(spacing: 12) {
+                Spacer()
+                
+                // Cancel Button
+                Button(action: {
+                    service.cancelAction()
+                    dismiss()
+                }) {
+                    Text(loc.currentLanguage == .chinese ? "取消" : "Cancel")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundColor(.secondary)
+                        .padding(.horizontal, 20)
+                        .padding(.vertical, 8)
+                        .background(Color.gray.opacity(0.1))
+                        .cornerRadius(8)
+                }
+                .buttonStyle(.plain)
+                
+                // Confirm Button
+                Button(action: {
+                    service.confirmAction()
+                    dismiss()
+                }) {
+                    Text(loc.currentLanguage == .chinese ? "继续执行" : "Continue")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 20)
+                        .padding(.vertical, 8)
+                        .background(Color.orange)
+                        .cornerRadius(8)
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(.horizontal, 24)
+            .padding(.vertical, 16)
+        }
+        .frame(width: 480)
+        .background(Color(NSColor.windowBackgroundColor))
+    }
+    
+    // 获取任务的具体操作列表
+    private func getTaskOperations(_ task: MaintenanceTask) -> [String] {
+        let chinese = loc.currentLanguage == .chinese
+        
+        switch task {
+        case .repairApps:
+            return chinese ? [
+                "清理所有应用崩溃日志",
+                "删除所有应用保存状态（某些应用可能需要重新登录）",
+                "清理应用临时文件",
+                "重置 Launch Services 数据库",
+                "清理 Core Services 缓存"
+            ] : [
+                "Clean all app crash logs",
+                "Delete all app saved states (some apps may need re-login)",
+                "Clean app temporary files",
+                "Reset Launch Services database",
+                "Clean Core Services cache"
+            ]
+            
+        case .timeMachine:
+            return chinese ? [
+                "列出所有本地时间机器快照",
+                "删除旧快照（保留最新的一个）",
+                "释放磁盘空间"
+            ] : [
+                "List all local Time Machine snapshots",
+                "Delete old snapshots (keep the latest one)",
+                "Free up disk space"
+            ]
+            
+        default:
+            return []
+        }
     }
 }

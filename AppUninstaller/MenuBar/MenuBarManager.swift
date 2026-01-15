@@ -202,8 +202,8 @@ class MenuBarManager: NSObject, ObservableObject {
             
             // Should align tops? usually.
             // Or center vertically relative to main window?
-            // CleanMyMac usually aligns top or keeps them side-by-side cleanly.
-            // Let's align Bottoms? or Tops. Let's align Top.
+            // Modern macOS apps usually align top or keep them side-by-side cleanly.
+            // Let's align Tops for better visual consistency.
             // Main window height is usually dynamic or ~600.
             
             let xPos = mainFrame.minX - detailWidth - gap

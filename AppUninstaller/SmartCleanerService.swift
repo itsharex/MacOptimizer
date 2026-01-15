@@ -60,8 +60,8 @@ enum MainCategory: String, CaseIterable, Identifiable {
     var subcategories: [CleanerCategory] {
         switch self {
         case .systemJunk:
-            return [.userCache, .systemCache, .oldUpdates, .languageFiles, 
-                    .systemLogs, .userLogs, .brokenLoginItems]
+            return [.userCache, .systemCache, .oldUpdates, 
+                    .systemLogs, .userLogs]
         case .duplicates:
             return [.duplicates]
         case .similarPhotos:
@@ -87,10 +87,10 @@ enum CleanerCategory: String, CaseIterable {
     case systemCache = "系统缓存文件"
     case oldUpdates = "下载与更新"
     case userCache = "用户缓存文件"
-    case languageFiles = "语言文件"
+    // languageFiles 已删除 - 删除 .lproj 会破坏应用签名
     case systemLogs = "系统日志文件"
     case userLogs = "用户日志文件"
-    case brokenLoginItems = "损坏的登录项"
+    // brokenLoginItems 已删除 - 不符合"只清理缓存"原则
     
     // 原有类别
     case duplicates = "重复文件"
@@ -110,10 +110,8 @@ enum CleanerCategory: String, CaseIterable {
         case .systemCache: return "internaldrive"
         case .oldUpdates: return "arrow.down.circle"
         case .userCache: return "person.crop.circle"
-        case .languageFiles: return "character.bubble"
         case .systemLogs: return "doc.text"
         case .userLogs: return "person.text.rectangle"
-        case .brokenLoginItems: return "exclamationmark.triangle"
         case .duplicates: return "doc.on.doc"
         case .similarPhotos: return "photo.on.rectangle"
         case .localizations: return "alphabet"
@@ -131,10 +129,8 @@ enum CleanerCategory: String, CaseIterable {
         case .systemCache: return "System Cache"
         case .oldUpdates: return "Downloads & Updates"
         case .userCache: return "User Cache"
-        case .languageFiles: return "Language Files"
         case .systemLogs: return "System Logs"
         case .userLogs: return "User Logs"
-        case .brokenLoginItems: return "Broken Login Items"
         case .duplicates: return "Duplicates"
         case .similarPhotos: return "Similar Photos"
         case .localizations: return "Localizations"
@@ -152,10 +148,8 @@ enum CleanerCategory: String, CaseIterable {
         case .systemCache: return .blue
         case .oldUpdates: return .orange
         case .userCache: return .cyan
-        case .languageFiles: return .purple
         case .systemLogs: return .green
         case .userLogs: return .teal
-        case .brokenLoginItems: return .red
         case .duplicates: return .blue
         case .similarPhotos: return .purple
         case .localizations: return .orange
@@ -170,7 +164,7 @@ enum CleanerCategory: String, CaseIterable {
     /// 是否是系统垃圾子类别
     var isSystemJunkSubcategory: Bool {
         switch self {
-        case .systemCache, .oldUpdates, .userCache, .languageFiles, .systemLogs, .userLogs, .brokenLoginItems:
+        case .systemCache, .oldUpdates, .userCache, .systemLogs, .userLogs:
             return true
         default:
             return false
@@ -288,10 +282,10 @@ class SmartCleanerService: ObservableObject {
     @Published var systemCacheFiles: [CleanerFileItem] = []
     @Published var oldUpdateFiles: [CleanerFileItem] = []
     @Published var userCacheFiles: [CleanerFileItem] = []
-    @Published var languageFiles: [CleanerFileItem] = []
+    // languageFiles 已删除 - 会破坏应用签名
     @Published var systemLogFiles: [CleanerFileItem] = []
     @Published var userLogFiles: [CleanerFileItem] = []
-    @Published var brokenLoginItems: [CleanerFileItem] = []
+    // brokenLoginItems 已删除 - 不符合"只清理缓存"原则
     
     // 扫描状态追踪 (针对 8 大分类)
     @Published var scannedCategories: Set<CleanerCategory> = []
@@ -350,12 +344,10 @@ class SmartCleanerService: ObservableObject {
         let oldUpdates = oldUpdateFiles.filter { $0.isSelected }.reduce(0) { $0 + $1.size }
         let userCache = userCacheFiles.filter { $0.isSelected }.reduce(0) { $0 + $1.size }
         let groupedCache = appCacheGroups.reduce(0) { $0 + $1.selectedSize }
-        let languages = languageFiles.filter { $0.isSelected }.reduce(0) { $0 + $1.size }
         let sysLogs = systemLogFiles.filter { $0.isSelected }.reduce(0) { $0 + $1.size }
         let userLogs = userLogFiles.filter { $0.isSelected }.reduce(0) { $0 + $1.size }
-        let brokenLogin = brokenLoginItems.filter { $0.isSelected }.reduce(0) { $0 + $1.size }
         
-        return systemCache + oldUpdates + userCache + groupedCache + languages + sysLogs + userLogs + brokenLogin
+        return systemCache + oldUpdates + userCache + groupedCache + sysLogs + userLogs
     }
     
     var virusTotalSize: Int64 {
@@ -375,14 +367,10 @@ class SmartCleanerService: ObservableObject {
             let looseFilesSize = userCacheFiles.filter { $0.isSelected }.reduce(0) { $0 + $1.size }
             let groupedFilesSize = appCacheGroups.reduce(0) { $0 + $1.selectedSize } // Use selectedSize property
             return looseFilesSize + groupedFilesSize
-        case .languageFiles:
-            return languageFiles.filter { $0.isSelected }.reduce(0) { $0 + $1.size }
         case .systemLogs:
             return systemLogFiles.filter { $0.isSelected }.reduce(0) { $0 + $1.size }
         case .userLogs:
             return userLogFiles.filter { $0.isSelected }.reduce(0) { $0 + $1.size }
-        case .brokenLoginItems:
-            return brokenLoginItems.filter { $0.isSelected }.reduce(0) { $0 + $1.size }
         case .duplicates:
             return duplicateGroups.reduce(0) { $0 + $1.wastedSize }
         case .similarPhotos:
@@ -411,21 +399,17 @@ class SmartCleanerService: ObservableObject {
              // or manually add appCacheGroups.files.count
             return systemCacheFiles.count + oldUpdateFiles.count + userCacheFiles.count +
                    appCacheGroups.reduce(0) { $0 + $1.files.count } +
-                   languageFiles.count + systemLogFiles.count + userLogFiles.count + brokenLoginItems.count
+                   systemLogFiles.count + userLogFiles.count
         case .systemCache:
             return systemCacheFiles.count
         case .oldUpdates:
             return oldUpdateFiles.count
         case .userCache:
             return userCacheFiles.count + appCacheGroups.reduce(0) { $0 + $1.files.count }
-        case .languageFiles:
-            return languageFiles.count
         case .systemLogs:
             return systemLogFiles.count
         case .userLogs:
             return userLogFiles.count
-        case .brokenLoginItems:
-            return brokenLoginItems.count
         case .duplicates:
             return duplicateGroups.flatMap { $0.files }.count
         case .similarPhotos:
@@ -473,10 +457,6 @@ class SmartCleanerService: ObservableObject {
             
             // 关键修复: 手动触发 Service 的更新通知，确保 Summary View 刷新统计数据
             self.objectWillChange.send()
-        case .languageFiles:
-            if let idx = languageFiles.firstIndex(where: { $0.url == file.url }) {
-                languageFiles[idx].isSelected.toggle()
-            }
         case .systemLogs:
             if let idx = systemLogFiles.firstIndex(where: { $0.url == file.url }) {
                 systemLogFiles[idx].isSelected.toggle()
@@ -484,10 +464,6 @@ class SmartCleanerService: ObservableObject {
         case .userLogs:
             if let idx = userLogFiles.firstIndex(where: { $0.url == file.url }) {
                 userLogFiles[idx].isSelected.toggle()
-            }
-        case .brokenLoginItems:
-            if let idx = brokenLoginItems.firstIndex(where: { $0.url == file.url }) {
-                brokenLoginItems[idx].isSelected.toggle()
             }
         case .localizations:
             if let idx = localizationFiles.firstIndex(where: { $0.url == file.url }) {
@@ -563,14 +539,10 @@ class SmartCleanerService: ObservableObject {
             }
             // 移除空组
             appCacheGroups.removeAll { $0.files.isEmpty }
-        case .languageFiles:
-            languageFiles.removeAll { $0.url == file.url }
         case .systemLogs:
             systemLogFiles.removeAll { $0.url == file.url }
         case .userLogs:
             userLogFiles.removeAll { $0.url == file.url }
-        case .brokenLoginItems:
-            brokenLoginItems.removeAll { $0.url == file.url }
         case .localizations:
             localizationFiles.removeAll { $0.url == file.url }
         case .largeFiles:
@@ -589,10 +561,8 @@ class SmartCleanerService: ObservableObject {
         case .userCache: return userCacheFiles + appCacheGroups.flatMap { $0.files }
         case .systemCache: return systemCacheFiles
         case .oldUpdates: return oldUpdateFiles
-        case .languageFiles: return languageFiles
         case .systemLogs: return systemLogFiles
         case .userLogs: return userLogFiles
-        case .brokenLoginItems: return brokenLoginItems
         case .duplicates: return duplicateGroups.flatMap { $0.files }
         case .similarPhotos: return similarPhotoGroups.flatMap { $0.files }
         case .largeFiles: return largeFiles
@@ -767,10 +737,6 @@ class SmartCleanerService: ObservableObject {
                     appCacheGroups[gIdx].files[fIdx].isSelected = targetState
                 }
             }
-        case .languageFiles:
-            for i in languageFiles.indices {
-                languageFiles[i].isSelected = targetState
-            }
         case .systemLogs:
             for i in systemLogFiles.indices {
                 systemLogFiles[i].isSelected = targetState
@@ -778,10 +744,6 @@ class SmartCleanerService: ObservableObject {
         case .userLogs:
             for i in userLogFiles.indices {
                 userLogFiles[i].isSelected = targetState
-            }
-        case .brokenLoginItems:
-            for i in brokenLoginItems.indices {
-                brokenLoginItems[i].isSelected = targetState
             }
         case .largeFiles:
             for i in largeFiles.indices {
@@ -834,10 +796,8 @@ class SmartCleanerService: ObservableObject {
             systemCacheFiles = []
             oldUpdateFiles = []
             userCacheFiles = []
-            languageFiles = []
             systemLogFiles = []
             userLogFiles = []
-            brokenLoginItems = []
         }
         
         let totalSteps = 7.0
@@ -1866,100 +1826,7 @@ class SmartCleanerService: ObservableObject {
     
     // MARK: - 语言文件扫描
     // MARK: - 语言文件扫描
-    private func scanLanguageFiles() async -> [CleanerFileItem] {
-        var items: [CleanerFileItem] = []
-        let fileManager = FileManager.default
-        
-        // 1. 获取用户偏好语言列表
-        // 保留英语 (Base, en) 和用户首选语言
-        var keepLanguages: Set<String> = ["Base", "en", "English"]
-        
-        // 添加用户当前系统语言
-        for lang in Locale.preferredLanguages {
-            // lang 格式可能是 "zh-Hans-CN", "en-US" 等
-            // 我们需要提取主要部分，例如 "zh", "zh-Hans"
-            // lang 格式可能是 "zh-Hans-CN", "en-US" 等
-            let parts = lang.split(separator: "-").map(String.init)
-            if let languageCode = parts.first {
-                keepLanguages.insert(languageCode)
-                if parts.count > 1 {
-                    let secondPart = parts[1]
-                    // 检查第二个部分是否是 Script (Hans, Hant 等，通常是 4 个字母)
-                    if secondPart.count == 4 {
-                        keepLanguages.insert("\(languageCode)-\(secondPart)")
-                        keepLanguages.insert("\(languageCode)_\(secondPart)")
-                    }
-                }
-            }
-            keepLanguages.insert(lang)
-        }
-        
-        // 2. 扫描应用程序目录
-        let appDirs = [
-            "/Applications",
-            fileManager.homeDirectoryForCurrentUser.appendingPathComponent("Applications").path,
-            "/Library/Application Support" // 增加 Application Support 扫描，有些应用数据存在这里
-        ]
-        
-        for appDir in appDirs {
-            guard let apps = try? fileManager.contentsOfDirectory(atPath: appDir) else { continue }
-            
-            for appName in apps where appName.hasSuffix(".app") {
-                let appPath = (appDir as NSString).appendingPathComponent(appName)
-                let appURL = URL(fileURLWithPath: appPath)
-                
-                // --- 安全检查 ---
-                
-                // 跳过系统应用 (com.apple.)
-                let plistPath = appURL.appendingPathComponent("Contents/Info.plist")
-                if let plist = NSDictionary(contentsOfFile: plistPath.path),
-                   let bundleId = plist["CFBundleIdentifier"] as? String {
-                    if bundleId.hasPrefix("com.apple.") { continue }
-                }
-                
-                // 跳过 App Store 应用 (_MASReceipt) - 修改签名会导致无法运行
-                let receiptPath = appURL.appendingPathComponent("Contents/_MASReceipt")
-                if fileManager.fileExists(atPath: receiptPath.path) {
-                    continue
-                }
-                
-                // SIP 保护检查 (略，通常 /Applications 下的非系统应用可修改，但需注意)
-                
-                // --- 扫描 Resources ---
-                
-                let resourcesURL = appURL.appendingPathComponent("Contents/Resources")
-                guard let resources = try? fileManager.contentsOfDirectory(at: resourcesURL, includingPropertiesForKeys: nil) else { continue }
-                
-                for itemURL in resources where itemURL.pathExtension == "lproj" {
-                    let langName = itemURL.deletingPathExtension().lastPathComponent
-                    
-                    // 检查是否在保留列表中
-                    // 模糊匹配：如果 keepLanguages 包含 langName 的前缀，或者 langName 包含 keepLanguages 的元素
-                    let shouldKeep = keepLanguages.contains { keep in
-                        // 精确匹配
-                        if keep.lowercased() == langName.lowercased() { return true }
-                        // zh-Hans 匹配 zh-Hans.lproj
-                        if langName.lowercased().hasPrefix(keep.lowercased()) { return true }
-                        return false
-                    }
-                    
-                    if !shouldKeep {
-                        let size = calculateSize(at: itemURL)
-                        if size > 0 {
-                            items.append(CleanerFileItem(
-                                url: itemURL,
-                                name: "\(appName) - \(langName)",
-                                size: size,
-                                groupId: "languageFiles"
-                            ))
-                        }
-                    }
-                }
-            }
-        }
-        
-        return items.sorted { $0.size > $1.size }
-    }
+    // scanLanguageFiles 已删除 - 删除应用的 .lproj 文件会破坏代码签名
     
     // MARK: - 系统日志扫描
     private func scanSystemLogs() async -> [CleanerFileItem] {
@@ -2052,43 +1919,7 @@ class SmartCleanerService: ObservableObject {
     }
     
     // MARK: - 损坏的登录项扫描
-    private func scanBrokenLoginItems() async -> [CleanerFileItem] {
-        var items: [CleanerFileItem] = []
-        
-        // 检查 LaunchAgents
-        let launchAgentPaths = [
-            "~/Library/LaunchAgents",
-            "/Library/LaunchAgents"
-        ]
-        
-        for pathStr in launchAgentPaths {
-            let expandedPath = NSString(string: pathStr).expandingTildeInPath
-            let url = URL(fileURLWithPath: expandedPath)
-            guard fileManager.fileExists(atPath: url.path) else { continue }
-            
-            if let contents = try? fileManager.contentsOfDirectory(at: url, includingPropertiesForKeys: nil) {
-                for plistURL in contents where plistURL.pathExtension == "plist" {
-                    // 检查 plist 是否指向不存在的程序
-                    if let plistData = try? Data(contentsOf: plistURL),
-                       let plist = try? PropertyListSerialization.propertyList(from: plistData, options: [], format: nil) as? [String: Any],
-                       let program = plist["Program"] as? String ?? (plist["ProgramArguments"] as? [String])?.first {
-                        
-                        if !fileManager.fileExists(atPath: program) {
-                            let size = (try? fileManager.attributesOfItem(atPath: plistURL.path)[.size] as? UInt64) ?? 0
-                            items.append(CleanerFileItem(
-                                url: plistURL,
-                                name: plistURL.lastPathComponent,
-                                size: Int64(size),
-                                groupId: "brokenLoginItems"
-                            ))
-                        }
-                    }
-                }
-            }
-        }
-        
-        return items
-    }
+    // scanBrokenLoginItems 已删除 - 不符合"只清理缓存"原则
     
     // MARK: - 扫描重复文件 - 多线程优化版
     func scanDuplicates() async {
@@ -2635,7 +2466,7 @@ class SmartCleanerService: ObservableObject {
             }
             await scanLargeFiles()
             
-        case .systemJunk, .systemCache, .oldUpdates, .userCache, .languageFiles, .systemLogs, .userLogs, .brokenLoginItems, .virus, .appUpdates, .startupItems, .performanceApps:
+        case .systemJunk, .systemCache, .oldUpdates, .userCache, .systemLogs, .userLogs, .virus, .appUpdates, .startupItems, .performanceApps:
             // 系统垃圾及新类别使用统一清理或专用方法
             break
         }
@@ -2690,7 +2521,7 @@ class SmartCleanerService: ObservableObject {
             return localizationFiles.filter { $0.isSelected }.count
         case .largeFiles:
             return largeFiles.filter { $0.isSelected }.count
-        case .systemJunk, .systemCache, .oldUpdates, .userCache, .languageFiles, .systemLogs, .userLogs, .brokenLoginItems:
+        case .systemJunk, .systemCache, .oldUpdates, .userCache, .systemLogs, .userLogs:
             return countFor(category: category)
         case .virus:
             return virusThreats.count
@@ -2717,7 +2548,7 @@ class SmartCleanerService: ObservableObject {
             return virusThreats.filter { $0.isSelected }.reduce(0) { $0 + $1.size }
         case .performanceApps:
             return performanceApps.filter { $0.isSelected }.reduce(0) { $0 + $1.memoryUsage }
-        case .systemJunk, .systemCache, .oldUpdates, .userCache, .languageFiles, .systemLogs, .userLogs, .brokenLoginItems, .appUpdates, .startupItems:
+        case .systemJunk, .systemCache, .oldUpdates, .userCache, .systemLogs, .userLogs, .appUpdates, .startupItems:
             return sizeFor(category: category)
         }
     }
@@ -2735,10 +2566,8 @@ class SmartCleanerService: ObservableObject {
         userCacheFiles = []
         systemCacheFiles = []
         oldUpdateFiles = []
-        languageFiles = []
         systemLogFiles = []
         userLogFiles = []
-        brokenLoginItems = []
         duplicateGroups = []
         similarPhotoGroups = []
         localizationFiles = []
@@ -2958,7 +2787,7 @@ class SmartCleanerService: ObservableObject {
         }
         
         // 1. 清理系统垃圾 (System Junk + User Cache)
-        let systemJunk = systemCacheFiles + userCacheFiles + oldUpdateFiles + brokenLoginItems + systemLogFiles + userLogFiles
+        let systemJunk = systemCacheFiles + userCacheFiles + oldUpdateFiles + systemLogFiles + userLogFiles
         if !systemJunk.isEmpty {
            await MainActor.run { 
                cleaningCurrentCategory = .systemJunk 
@@ -3157,10 +2986,8 @@ class SmartCleanerService: ObservableObject {
             userCacheFiles = userCacheFiles.filter { failedSet.contains($0.url) }
             systemCacheFiles = systemCacheFiles.filter { failedSet.contains($0.url) }
             oldUpdateFiles = oldUpdateFiles.filter { failedSet.contains($0.url) }
-            languageFiles = languageFiles.filter { failedSet.contains($0.url) }
             systemLogFiles = systemLogFiles.filter { failedSet.contains($0.url) }
             userLogFiles = userLogFiles.filter { failedSet.contains($0.url) }
-            brokenLoginItems = brokenLoginItems.filter { failedSet.contains($0.url) }
             
             // 对于 duplicateGroups 和 similarPhotoGroups，重新扫描比较好，因为结构变了
             // 这里简单处理：如果某个文件还在，就保留它
@@ -3325,7 +3152,7 @@ class SmartCleanerService: ObservableObject {
             for i in 0..<largeFiles.count {
                 largeFiles[i].isSelected = selected
             }
-        case .systemJunk, .systemCache, .oldUpdates, .userCache, .languageFiles, .systemLogs, .userLogs, .brokenLoginItems, .appUpdates:
+        case .systemJunk, .systemCache, .oldUpdates, .userCache, .systemLogs, .userLogs, .appUpdates:
             // 系统垃圾类别暂不支持单独选择
             break
         case .virus:
@@ -3350,10 +3177,8 @@ class SmartCleanerService: ObservableObject {
         let userCacheSize = userCacheFiles.filter { $0.isSelected }.reduce(0) { $0 + $1.size }
         let systemCacheSize = systemCacheFiles.filter { $0.isSelected }.reduce(0) { $0 + $1.size }
         let oldUpdatesSize = oldUpdateFiles.filter { $0.isSelected }.reduce(0) { $0 + $1.size }
-        let languageFilesSize = languageFiles.filter { $0.isSelected }.reduce(0) { $0 + $1.size }
         let systemLogsSize = systemLogFiles.filter { $0.isSelected }.reduce(0) { $0 + $1.size }
         let userLogsSize = userLogFiles.filter { $0.isSelected }.reduce(0) { $0 + $1.size }
-        let brokenLoginItemsSize = brokenLoginItems.filter { $0.isSelected }.reduce(0) { $0 + $1.size }
         
         // 重复文件（只计算选中的文件）
         let dupSize = duplicateGroups.flatMap { $0.files }.filter { $0.isSelected }.reduce(0) { $0 + $1.size }
@@ -3370,8 +3195,8 @@ class SmartCleanerService: ObservableObject {
         // 病毒威胁
         let virusSize = virusThreats.filter { $0.isSelected }.reduce(0) { $0 + $1.size }
         
-        return userCacheSize + systemCacheSize + oldUpdatesSize + languageFilesSize + 
-               systemLogsSize + userLogsSize + brokenLoginItemsSize + 
+        return userCacheSize + systemCacheSize + oldUpdatesSize + 
+               systemLogsSize + userLogsSize + 
                dupSize + photoSize + locSize + largeSize + virusSize
     }
     
@@ -3383,10 +3208,8 @@ class SmartCleanerService: ObservableObject {
         allFiles.append(contentsOf: userCacheFiles.filter { $0.isSelected })
         allFiles.append(contentsOf: systemCacheFiles.filter { $0.isSelected })
         allFiles.append(contentsOf: oldUpdateFiles.filter { $0.isSelected })
-        allFiles.append(contentsOf: languageFiles.filter { $0.isSelected })
         allFiles.append(contentsOf: systemLogFiles.filter { $0.isSelected })
         allFiles.append(contentsOf: userLogFiles.filter { $0.isSelected })
-        allFiles.append(contentsOf: brokenLoginItems.filter { $0.isSelected })
         
         // Groups
         for group in appCacheGroups {
@@ -3480,11 +3303,6 @@ class SmartCleanerService: ObservableObject {
         // Old Updates
         for i in 0..<oldUpdateFiles.count {
              if shouldDeselect(oldUpdateFiles[i]) { oldUpdateFiles[i].isSelected = false }
-        }
-        
-        // Language Files
-        for i in 0..<languageFiles.count {
-             if shouldDeselect(languageFiles[i]) { languageFiles[i].isSelected = false }
         }
         
         // Logs

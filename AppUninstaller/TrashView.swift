@@ -404,22 +404,16 @@ struct TrashView: View {
                 switch scanState {
                 case .initial:
                     initialPage
-                        .background(TealMeshBackground())
                 case .scanning:
                     scanningPage
-                        .background(TealMeshBackground())
                 case .completed:
                     resultsPage
-                         .background(TealMeshBackground())
                 case .clean:
                     cleanPage
-                        .background(TealMeshBackground())
                 case .cleaning:
                     cleaningPage
-                        .background(TealMeshBackground())
                 case .finished:
                     finishedPage
-                        .background(TealMeshBackground())
                 }
             }
         }
@@ -439,111 +433,143 @@ struct TrashView: View {
     // MARK: - 1. 初始页面
     private var initialPage: some View {
         ZStack {
-            // Main Content (2 Columns)
-            HStack(spacing: 0) {
-                // Left Column: Text & Features
-                VStack(alignment: .leading, spacing: 0) {
-                    Spacer()
-                    
-                    // Title
-                    Text(loc.currentLanguage == .chinese ? "废纸篓" : "Trash")
-                        .font(.system(size: 40, weight: .bold))
+            HStack(spacing: 60) {
+                // Left Content
+                VStack(alignment: .leading, spacing: 30) {
+                    // Branding Header
+                    HStack(spacing: 8) {
+                        Text(loc.currentLanguage == .chinese ? "废纸篓清理" : "Trash Cleanup")
+                            .font(.system(size: 16, weight: .medium))
+                            .foregroundColor(.white)
+                        
+                        // Trash Icon
+                        HStack(spacing: 4) {
+                            Image(systemName: "trash.circle.fill")
+                            Text(loc.currentLanguage == .chinese ? "全面清空" : "Complete Empty")
+                                .font(.system(size: 20, weight: .heavy))
+                        }
                         .foregroundColor(.white)
-                        .padding(.bottom, 16)
+                    }
                     
-                    // Subtitle
-                    Text(loc.currentLanguage == .chinese ? "倾倒 Mac 上所有废纸篓，包括邮件和照片图库垃圾。" : "Dump all Trash on Mac, including Mail and Photos trash.")
-                        .font(.system(size: 15))
-                        .foregroundColor(.white.opacity(0.8))
+                    Text(loc.currentLanguage == .chinese ? 
+                         "倾倒 Mac 上所有废纸篓，包括邮件和照片图库垃圾。\n上次清空时间：从未" :
+                         "Empty all Trash on Mac, including Mail and Photos.\nLast emptied: Never")
+                        .font(.system(size: 13))
+                        .foregroundColor(.white.opacity(0.7))
                         .lineSpacing(4)
-                        .padding(.bottom, 40)
-                        .fixedSize(horizontal: false, vertical: true)
                     
-                    // Feature List
-                    VStack(alignment: .leading, spacing: 32) {
+                    // Feature Rows
+                    VStack(alignment: .leading, spacing: 24) {
                         featureRow(
-                            icon: "trash",
-                            title: loc.currentLanguage == .chinese ? "立即倾倒所有垃圾" : "Dump all trash immediately",
+                            icon: "trash.slash",
+                            title: loc.currentLanguage == .chinese ? "立即倾倒所有垃圾" : "Empty All Trash Immediately",
                             subtitle: loc.currentLanguage == .chinese ? "无需浏览所有驱动器和应用查找它们的废纸篓。" : "No need to browse all drives and apps to find their trash."
                         )
                         
                         featureRow(
-                            icon: "finder",
-                            title: loc.currentLanguage == .chinese ? "避免各种“访达”错误" : "Avoid various Finder errors",
+                            icon: "exclamationmark.shield",
+                            title: loc.currentLanguage == .chinese ? "避免访达错误" : "Avoid Finder Errors",
                             subtitle: loc.currentLanguage == .chinese ? "确保倾倒您的废纸篓，不管是否有任何问题。" : "Ensures your Trash is emptied regardless of any issues."
                         )
+                        
+                        featureRow(
+                            icon: "mail.and.text.magnifyingglass",
+                            title: loc.currentLanguage == .chinese ? "包含邮件和照片" : "Include Mail & Photos",
+                            subtitle: loc.currentLanguage == .chinese ? "同时清理邮件应用和照片图库中的废纸篓。" : "Also clean trash from Mail app and Photos library."
+                        )
                     }
-                    .padding(.bottom, 100) // Create space for bottom button if needed, or just layout balance
                     
-                    Spacer()
+                    // Optional: View Items Button
+                    Button(action: {}) {
+                        Text(loc.currentLanguage == .chinese ? "查看详细项目..." : "View Trash Items...")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundColor(.black)
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 8)
+                            .background(Color(hex: "4DDEE8")) // Teal
+                            .cornerRadius(6)
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.top, 10)
                 }
-                .padding(.horizontal, 40)
-                .frame(maxWidth: .infinity, alignment: .leading)
+                .frame(maxWidth: 400)
                 
-                // Right Column: Large Icon Only
-                VStack {
-                    Spacer()
-                    
-                    // Icon (Direct Image)
+                // Right Icon - Using feizhilou.png
+                ZStack {
                     if let imagePath = Bundle.main.path(forResource: "feizhilou", ofType: "png"),
                        let nsImage = NSImage(contentsOfFile: imagePath) {
                         Image(nsImage: nsImage)
                             .resizable()
                             .aspectRatio(contentMode: .fit)
-                            .frame(width: 340, height: 340) // Large size
-                            .shadow(color: .black.opacity(0.2), radius: 20, y: 10)
+                            .frame(width: 320, height: 320)
+                            .shadow(color: Color.black.opacity(0.3), radius: 20, y: 10)
                     } else {
-                        Image(systemName: "trash.circle.fill")
-                            .font(.system(size: 200))
-                            .foregroundColor(.green)
+                        // Fallback
+                        RoundedRectangle(cornerRadius: 40)
+                            .fill(LinearGradient(
+                                colors: [Color(hex: "00D9A8"), Color(hex: "009688")],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            ))
+                            .frame(width: 280, height: 280)
+                            .overlay(
+                                Image(systemName: "trash.circle.fill")
+                                    .font(.system(size: 100))
+                                    .foregroundColor(.white)
+                            )
                     }
-                    
-                    Spacer()
                 }
-                .frame(width: 400)
             }
-            .padding(.bottom, 60) // Space for button
+            .padding(.horizontal, 40)
+            .padding(.bottom, 50)
             
-            // Scan Button (Bottom Center Overlay)
+            // Bottom Floating Scan Button
             VStack {
                 Spacer()
-                
-                CircularActionButton(
-                    title: loc.currentLanguage == .chinese ? "扫描" : "Scan",
-                    gradient: GradientStyles.fileExplorer,
-                    action: {
-                        Task { await scanner.scan() }
+                Button(action: {
+                    Task { await scanner.scan() }
+                }) {
+                    ZStack {
+                        Circle()
+                            .stroke(LinearGradient(
+                                colors: [.white.opacity(0.5), .white.opacity(0.1)],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            ), lineWidth: 2)
+                            .frame(width: 84, height: 84)
+                        
+                        Circle()
+                            .fill(Color.white.opacity(0.2))
+                            .frame(width: 74, height: 74)
+                            .shadow(color: Color.black.opacity(0.3), radius: 10, y: 5)
+                        
+                        Text(loc.currentLanguage == .chinese ? "扫描" : "Scan")
+                            .font(.system(size: 16, weight: .medium))
+                            .foregroundColor(.white)
                     }
-                )
-                .shadow(color: Color.blue.opacity(0.4), radius: 10, y: 5)
-                .padding(.bottom, 60)
+                }
+                .buttonStyle(.plain)
+                .padding(.bottom, 40)
+                .transition(.scale.combined(with: .opacity))
             }
         }
     }
     
-    // ... featureRow ...
+    // MARK: - Feature Row Helper
     private func featureRow(icon: String, title: String, subtitle: String) -> some View {
         HStack(alignment: .top, spacing: 16) {
-            if icon == "finder" {
-                 Image(systemName: "face.smiling")
-                    .font(.system(size: 24))
-                    .foregroundColor(.white.opacity(0.9))
-                    .frame(width: 32)
-            } else {
-                 Image(systemName: icon)
-                    .font(.system(size: 24))
-                    .foregroundColor(.white.opacity(0.9))
-                    .frame(width: 32)
-            }
+            Image(systemName: icon)
+                .font(.system(size: 24, weight: .light))
+                .foregroundColor(.white.opacity(0.8))
+                .frame(width: 32, height: 32)
             
-            VStack(alignment: .leading, spacing: 6) {
+            VStack(alignment: .leading, spacing: 4) {
                 Text(title)
-                    .font(.system(size: 16, weight: .semibold))
+                    .font(.system(size: 15, weight: .medium))
                     .foregroundColor(.white)
                 Text(subtitle)
-                    .font(.system(size: 13))
-                    .foregroundColor(.white.opacity(0.7))
-                    .lineSpacing(2)
+                    .font(.system(size: 12))
+                    .foregroundColor(.white.opacity(0.6))
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
@@ -1075,44 +1101,4 @@ struct TrashItemRow: View {
     }
 }
 
-// MARK: - Teal Mesh Background (Trash Theme)
-struct TealMeshBackground: View {
-    var body: some View {
-        ZStack {
-            // 1. Teal/Green Gradient Base
-            LinearGradient(
-                colors: [
-                    Color(hex: "009688"), // Teal Green
-                    Color(hex: "2c3e50")  // Deep Blue/Grey
-                ],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-            
-            // 2. Soft Overlays
-            GeometryReader { proxy in
-                ZStack {
-                    // Top-Left Bright Green Glow
-                    Circle()
-                        .fill(Color(hex: "00F260").opacity(0.3))
-                        .frame(width: 800, height: 800)
-                        .blur(radius: 100)
-                        .offset(x: -200, y: -200)
-                    
-                    // Bottom-Right Deep Blue Shadow
-                    Circle()
-                        .fill(Color(hex: "0575E6").opacity(0.5))
-                        .frame(width: 900, height: 900)
-                        .blur(radius: 120)
-                        .offset(x: 200, y: 300)
-                }
-            }
-            
-            // 3. Subtle Noise/Texture
-             Rectangle()
-                .fill(Color.white.opacity(0.03))
-                .blendMode(.overlay)
-        }
-        .ignoresSafeArea()
-    }
-}
+// TealMeshBackground removed - using global background from ContentView
