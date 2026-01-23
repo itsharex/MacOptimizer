@@ -504,88 +504,114 @@ struct SmartCleanerView: View {
     }
     private var cleaningFinishedPage: some View {
         VStack {
-            Spacer().frame(height: 100)
+            Spacer().frame(height: 50)
             
+            // Headline
+            VStack(spacing: 8) {
+                Text(loc.currentLanguage == .chinese ? "好了，我发现的内容都在这里。" : "Well done, here is what I found.")
+                    .font(.system(size: 32, weight: .medium))
+                    .foregroundColor(.white)
+                
+                Text(loc.currentLanguage == .chinese ? "保持您的 Mac 干净、安全、性能优化的所有任务正在等候。立即运行！" : "All tasks to keep your Mac clean, safe, and optimized are ready. Run now!")
+                    .font(.system(size: 14))
+                    .foregroundColor(.white.opacity(0.6))
+            }
+            
+            Spacer().frame(height: 50)
+            
+            // Horizontal Cards
             HStack(spacing: 60) {
-                // Left: Hero Image (iMac with wiper)
-                if let imagePath = Bundle.main.path(forResource: "welcome", ofType: "png"),
-                   let nsImage = NSImage(contentsOfFile: imagePath) {
-                    Image(nsImage: nsImage)
-                        .resizable()
-                        .aspectRatio(contentMode: .fit)
-                        .frame(width: 500, height: 500)
-                } else {
-                     Image(systemName: "desktopcomputer")
-                        .resizable()
-                        .frame(width: 300, height: 300)
-                        .foregroundColor(.pink)
+                // 1. Cleanup (Blue)
+                VStack(spacing: 30) {
+                    ScanResultCard(
+                        icon: "trash.circle.fill", // Using standard SF Symbol or custom
+                        title: loc.currentLanguage == .chinese ? "清理" : "Cleanup",
+                        subtitle: loc.currentLanguage == .chinese ? "移除不需要的垃圾" : "Remove unwanted junk",
+                        gradient: BackgroundStyles.cardApps, // Blue
+                        isCompleted: true
+                    )
+                    
+                    ScanResultStat(
+                        value: ByteCountFormatter.string(fromByteCount: service.totalCleanedSize, countStyle: .file).replacingOccurrences(of: " GB", with: "").replacingOccurrences(of: " MB", with: "").replacingOccurrences(of: " KB", with: ""),
+                        unit: ByteCountFormatter.string(fromByteCount: service.totalCleanedSize, countStyle: .file).suffix(2).trimmingCharacters(in: .whitespaces),
+                        detailsAction: {
+                            withAnimation { viewingLog = true }
+                        },
+                        color: Color(red: 0.2, green: 0.6, blue: 1.0), // Blue Text
+                        loc: loc
+                    )
                 }
                 
-                // Right: Results
-                VStack(alignment: .leading, spacing: 30) {
-                    VStack(alignment: .leading, spacing: 8) {
-                         Text(loc.currentLanguage == .chinese ? "做得不错！" : "Well done!")
-                             .font(.system(size: 36, weight: .bold))
-                             .foregroundColor(.white)
-                         Text(loc.currentLanguage == .chinese ? "您的 Mac 状态很好。" : "Your Mac is in good shape.")
-                             .font(.system(size: 16))
-                             .foregroundColor(.white.opacity(0.6))
-                    }
+                // 2. Protection (Green)
+                VStack(spacing: 30) {
+                    ScanResultCard(
+                        icon: "lock.shield.fill",
+                        title: loc.currentLanguage == .chinese ? "保护" : "Protection",
+                        subtitle: loc.currentLanguage == .chinese ? "消除潜在威胁" : "Eliminate potential threats",
+                        gradient: BackgroundStyles.cardCleaning, // Green (naming mismatch in Styles)
+                        isCompleted: true
+                    )
                     
-                    VStack(spacing: 12) {
-                        // 1. Cleanup Result
-                        ResultCompactRow(
-                            icon: "yinpan_2026",
-                            title: loc.currentLanguage == .chinese ? "清理" : "Cleanup",
-                            subtitle: loc.currentLanguage == .chinese ? "不需要的垃圾已移除" : "Junk removed",
-                            stat: ByteCountFormatter.string(fromByteCount: service.totalCleanedSize, countStyle: .file)
-                        )
-                        
-                        // 2. Protection Result
-                        ResultCompactRow(
-                            icon: "zhiwendunpai_2026",
-                            title: loc.currentLanguage == .chinese ? "保护" : "Protection",
-                            subtitle: loc.currentLanguage == .chinese ? "潜在问题已解决" : "Resolved",
-                            stat: "\(service.totalResolvedThreats) " + (loc.currentLanguage == .chinese ? "个威胁" : "Threats")
-                        )
-                        
-                        // 3. Speed Result
-                        ResultCompactRow(
-                            icon: "yibiaopan_2026",
-                            title: loc.currentLanguage == .chinese ? "速度" : "Speed",
-                            subtitle: loc.currentLanguage == .chinese ? "Mac 的性能达到极致" : "Optimized",
-                            stat: "\(service.totalOptimizedItems) " + (loc.currentLanguage == .chinese ? "个任务" : "Tasks")
-                        )
-                    }
+                    ScanResultStat(
+                        value: service.totalResolvedThreats > 0 ? "\(service.totalResolvedThreats)" : (loc.currentLanguage == .chinese ? "好" : "Good"),
+                        unit: service.totalResolvedThreats > 0 ? (loc.currentLanguage == .chinese ? "个威胁" : "Threats") : "",
+                        detailsAction: nil, // No details for Good
+                        color: Color.green, // Green Text
+                        loc: loc
+                    )
+                }
+                
+                // 3. Speed (Pink/Red)
+                VStack(spacing: 30) {
+                    ScanResultCard(
+                        icon: "gauge.with.needle",
+                        title: loc.currentLanguage == .chinese ? "速度" : "Speed",
+                        subtitle: loc.currentLanguage == .chinese ? "提升系统性能" : "Boost system performance",
+                        gradient: BackgroundStyles.cardProtection, // Pink/Purple (naming mismatch)
+                        isCompleted: service.totalOptimizedItems > 0
+                    )
+                    
+                    ScanResultStat(
+                        value: "\(service.totalOptimizedItems)",
+                        unit: loc.currentLanguage == .chinese ? "个任务可运行" : "Tasks",
+                        detailsAction: nil,
+                        color: Color(red: 1.0, green: 0.4, blue: 0.6), // Pink Text
+                        loc: loc
+                    )
                 }
             }
-            .frame(maxWidth: .infinity, alignment: .center)
-            .frame(height: 550)
+            .frame(maxWidth: .infinity)
             
             Spacer()
-        }
-        .overlay(
-            // Bottom Left: View Log
-            VStack {
-                Spacer()
-                HStack {
-                    HStack(spacing: 6) {
-                        Image(systemName: "exclamationmark.triangle.fill")
-                            .foregroundColor(.yellow)
-                            .font(.system(size: 14))
-                        Button(loc.currentLanguage == .chinese ? "查看日志" : "View Log") {
-                            withAnimation { viewingLog = true }
-                        }
-                        .font(.system(size: 14, weight: .medium))
-                        .foregroundColor(.yellow)
-                        .buttonStyle(.plain)
-                    }
-                    .padding(.leading, 60)
-                    .padding(.bottom, 40)
-                    Spacer()
+            
+            // Run Button (Bottom Center)
+            Button(action: {
+                // Perform clean logic or dismiss
+                // Usually this button triggers "Clean Now" if separated scan/clean
+                // But scanClean() usually runs automatically or manually.
+                // Assuming this is the "Done" state, user might want to re-run or just finish.
+                // For now, matching the design "Run" button style.
+            }) {
+                ZStack {
+                    Circle()
+                        .fill(LinearGradient(colors: [.blue, .purple], startPoint: .top, endPoint: .bottom))
+                        .frame(width: 80, height: 80)
+                        .shadow(color: .blue.opacity(0.5), radius: 10)
+                        
+                    Text(loc.currentLanguage == .chinese ? "运行" : "Run")
+                        .font(.system(size: 18, weight: .bold))
+                        .foregroundColor(.white)
                 }
+                    .overlay(
+                        Circle()
+                            .stroke(Color.white.opacity(0.3), lineWidth: 4)
+                            .scaleEffect(1.2)
+                            .opacity(0.5)
+                    )
             }
-        )
+            .buttonStyle(.plain)
+            .padding(.bottom, 50)
+        }
     }
 
 

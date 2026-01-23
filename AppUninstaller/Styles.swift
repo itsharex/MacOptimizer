@@ -302,12 +302,12 @@ struct BackgroundStyles {
         endPoint: .bottomTrailing
     )
     
-    // 9. 智能清理 (紫靛色渐变 - 匹配设计图)
+    // 9. 智能清理 (紫靛色渐变 - 匹配设计图 V2 Vibrant)
     static let smartClean = LinearGradient(
         stops: [
-            .init(color: Color(red: 79/255, green: 65/255, blue: 89/255), location: 0.0),   // Top: #4F4159
-            .init(color: Color(red: 105/255, green: 87/255, blue: 144/255), location: 0.5), // Mid: #695790
-            .init(color: Color(red: 70/255, green: 71/255, blue: 124/255), location: 1.0)   // Bottom: #46477C
+            .init(color: Color(red: 0.45, green: 0.35, blue: 0.65), location: 0.0),   // Top: Vibrant Purple
+            .init(color: Color(red: 0.38, green: 0.28, blue: 0.58), location: 0.5),   // Mid: Transition
+            .init(color: Color(red: 0.25, green: 0.20, blue: 0.50), location: 1.0)    // Bottom: Deep Indigo
         ],
         startPoint: .top,
         endPoint: .bottom

@@ -891,8 +891,8 @@ class SmartCleanerService: ObservableObject {
         
         // 1. 扫描系统级 /Library/Caches（需要权限）
         let systemCachePaths = [
-            "/Library/Caches",
-            "/private/var/folders"  // 系统临时文件夹
+            "/Library/Caches"
+            // "/private/var/folders"  // 移除: 避免与 Step 4 重复统计，且顶级目录扫描不准确
         ]
         
         for systemPath in systemCachePaths {
@@ -1140,58 +1140,8 @@ class SmartCleanerService: ObservableObject {
             }
         }
         
-        // 6. 深度递归扫描 /private/var/folders（重点查找 coresymbolicationd 等大型缓存）
-        // 这些缓存通常在深层子目录中，例如 /private/var/folders/xx/xx/C/com.apple.coresymbolicationd
-        let privateVarFolders = URL(fileURLWithPath: "/private/var/folders")
-        if fileManager.isReadableFile(atPath: privateVarFolders.path) {
-            // 关键缓存名称模式（这些通常占用数GB空间）
-            let keyPatterns = [
-                "com.apple.coresymbolicationd",
-                "com.apple.iconservices",
-                "com.apple.Metal",
-                "com.apple.WebKit",
-                "com.apple.bird",
-                "com.apple.CoreSimulator",
-                "com.apple.Spotlight"
-            ]
-            
-            // 递归搜索函数
-            func recursiveSearchForKeys(in directory: URL, depth: Int, maxDepth: Int = 5) {
-                guard depth < maxDepth else { return }
-                guard let contents = try? fileManager.contentsOfDirectory(at: directory, includingPropertiesForKeys: [.isDirectoryKey]) else { return }
-                
-                for itemURL in contents {
-                    let itemName = itemURL.lastPathComponent
-                    
-                    // 检查是否匹配关键模式
-                    let isKeyCache = keyPatterns.contains { pattern in
-                        itemName.contains(pattern)
-                    }
-                    
-                    if isKeyCache {
-                        let size = calculateSize(at: itemURL)
-                        if size > 1024 { // > 1KB
-                            let displayName = itemName
-                                .replacingOccurrences(of: "com.apple.", with: "Apple ")
-                            items.append(CleanerFileItem(
-                                url: itemURL,
-                                name: displayName,
-                                size: size,
-                                groupId: "systemCache"
-                            ))
-                        }
-                    }
-                    
-                    // 继续递归（但避免扫描太深）
-                    if (try? itemURL.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true {
-                        recursiveSearchForKeys(in: itemURL, depth: depth + 1, maxDepth: maxDepth)
-                    }
-                }
-            }
-            
-            // 从 /private/var/folders 开始递归
-            recursiveSearchForKeys(in: privateVarFolders, depth: 0, maxDepth: 5)
-        }
+        // 6. 已移除深度递归扫描 /private/var/folders - 避免与 Step 4 重复统计
+        // (Step 4 已覆盖当前用户的 C/ 和 T/ 目录，包含绝大多数高价值缓存)
         
         return items.sorted { $0.size > $1.size }
     }
@@ -1581,6 +1531,12 @@ class SmartCleanerService: ObservableObject {
     // MARK: - 废纸篓扫描
     private func scanTrash() async -> [CleanerFileItem] {
         var items: [CleanerFileItem] = []
+        
+        // ✅ 修复：检查是否需要停止扫描（用户切换界面）
+        if await MainActor.run(body: { shouldStopScanning }) {
+            return items
+        }
+        
         let home = fileManager.homeDirectoryForCurrentUser
         let trashURL = home.appendingPathComponent(".Trash")
         
@@ -3022,27 +2978,29 @@ class SmartCleanerService: ObservableObject {
         
         // 刷新所有数据
         await MainActor.run { [failedFiles] in
-            // 只移除成功的，保留失败的
+            // 只移除成功的，保留失败的和未选中的
             let failedSet = Set(failedFiles.map(\.url))
             
-            userCacheFiles = userCacheFiles.filter { failedSet.contains($0.url) }
-            systemCacheFiles = systemCacheFiles.filter { failedSet.contains($0.url) }
-            oldUpdateFiles = oldUpdateFiles.filter { failedSet.contains($0.url) }
-            systemLogFiles = systemLogFiles.filter { failedSet.contains($0.url) }
-            userLogFiles = userLogFiles.filter { failedSet.contains($0.url) }
+            // ✅ 修复：只保留删除失败的文件或未被选中的文件
+            userCacheFiles = userCacheFiles.filter { !failedSet.contains($0.url) || !$0.isSelected }
+            systemCacheFiles = systemCacheFiles.filter { !failedSet.contains($0.url) || !$0.isSelected }
+            oldUpdateFiles = oldUpdateFiles.filter { !failedSet.contains($0.url) || !$0.isSelected }
+            systemLogFiles = systemLogFiles.filter { !failedSet.contains($0.url) || !$0.isSelected }
+            userLogFiles = userLogFiles.filter { !failedSet.contains($0.url) || !$0.isSelected }
             
             // 对于 duplicateGroups 和 similarPhotoGroups，重新扫描比较好，因为结构变了
-            // 这里简单处理：如果某个文件还在，就保留它
+            // 这里简单处理：如果某个文件还在，就保留它（保留第一个文件或删除失败的文件）
              duplicateGroups = duplicateGroups.map { group in
-                 DuplicateGroup(hash: group.hash, files: group.files.filter { failedSet.contains($0.url) || $0 == group.files.first })
+                 DuplicateGroup(hash: group.hash, files: group.files.filter { !failedSet.contains($0.url) || !group.files.first(where: { $0.url == $0.url })!.isSelected || $0 == group.files.first })
              }.filter { $0.files.count > 1 }
             
              similarPhotoGroups = similarPhotoGroups.map { group in
-                 DuplicateGroup(hash: group.hash, files: group.files.filter { failedSet.contains($0.url) || $0 == group.files.first })
+                 DuplicateGroup(hash: group.hash, files: group.files.filter { !failedSet.contains($0.url) || !group.files.first(where: { $0.url == $0.url })!.isSelected || $0 == group.files.first })
              }.filter { $0.files.count > 1 }
             
-            localizationFiles = localizationFiles.filter { failedSet.contains($0.url) || !$0.isSelected}
-            largeFiles = largeFiles.filter { failedSet.contains($0.url) || !$0.isSelected }
+            // ✅ 修复：同样的逻辑应用到其他文件数组
+            localizationFiles = localizationFiles.filter { !failedSet.contains($0.url) || !$0.isSelected }
+            largeFiles = largeFiles.filter { !failedSet.contains($0.url) || !$0.isSelected }
             
             
             // 最终状态更新 (Capture stats before clearing logic completely, though arrays are filtered above)
