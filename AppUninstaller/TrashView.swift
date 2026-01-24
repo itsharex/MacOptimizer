@@ -376,7 +376,8 @@ class TrashScanner: ObservableObject {
 }
 
 struct TrashView: View {
-    @StateObject private var scanner = TrashScanner()
+    // 使用共享的扫描服务管理器，防止切换界面时扫描中断
+    @ObservedObject private var scanner = ScanServiceManager.shared.trashScanner
     @ObservedObject private var loc = LocalizationManager.shared
     @State private var showEmptyConfirmation = false
     @State private var showCleaningFinished = false

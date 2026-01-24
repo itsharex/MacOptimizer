@@ -273,6 +273,22 @@ class JunkCleaner: ObservableObject {
     @Published var currentScanningPath: String = "" // Add path tracking
     @Published var currentScanningCategory: String = "" // Add category tracking
     
+    // MARK: - 分类清理进度跟踪
+    /// 正在清理的分类列表（按顺序）
+    @Published var cleaningCategories: [JunkType] = []
+    /// 当前正在清理的分类
+    @Published var currentCleaningCategory: JunkType? = nil
+    /// 每个分类的清理状态: pending, cleaning, completed
+    @Published var categoryCleaningStatus: [JunkType: CleaningStatus] = [:]
+    /// 每个分类的清理大小
+    @Published var categoryCleanedSize: [JunkType: Int64] = [:]
+    
+    enum CleaningStatus: String {
+        case pending = "pending"      // 等待清理
+        case cleaning = "cleaning"    // 正在清理
+        case completed = "completed"  // 清理完成
+    }
+    
     private let fileManager = FileManager.default
     
     var totalSize: Int64 {
@@ -293,6 +309,11 @@ class JunkCleaner: ObservableObject {
         hasPermissionErrors = false
         currentScanningPath = ""
         currentScanningCategory = ""
+        // 重置分类清理状态
+        cleaningCategories.removeAll()
+        currentCleaningCategory = nil
+        categoryCleaningStatus.removeAll()
+        categoryCleanedSize.removeAll()
     }
     
     /// 停止扫描
@@ -777,12 +798,105 @@ class JunkCleaner: ObservableObject {
             self.junkItems.removeAll { item in
                 selectedItems.contains { $0.id == item.id } && !failedItems.contains { $0.id == item.id }
             }
+            // 更新磁盘空间显示
+            DiskSpaceManager.shared.updateDiskSpace()
         }
         
-        // 重新扫描以反映最新状态
-        await scanJunk()
+        // 注意：清理完成后不再重新扫描，否则会导致UI显示0KB释放空间
+        // 因为上面已经从 junkItems 中移除了已清理的项目
         
         return (cleanedSize, failedSize, needsAdmin)
+    }
+    
+    /// 逐分类清理选中的垃圾 - 按设计图要求逐个分类清理并显示进度
+    func cleanSelectedByCategory() async -> (cleaned: Int64, failed: Int64, requiresAdmin: Bool) {
+        var totalCleanedSize: Int64 = 0
+        var totalFailedSize: Int64 = 0
+        var needsAdmin = false
+        
+        // 1. 获取所有有选中项目的分类（按大小降序排列）
+        let selectedItems = junkItems.filter { $0.isSelected }
+        let categorySizes: [JunkType: Int64] = Dictionary(grouping: selectedItems, by: { $0.type })
+            .mapValues { items in items.reduce(0) { $0 + $1.size } }
+        
+        let sortedCategories = categorySizes.keys.sorted { 
+            categorySizes[$0] ?? 0 > categorySizes[$1] ?? 0 
+        }
+        
+        // 2. 初始化分类清理状态
+        await MainActor.run {
+            self.cleaningCategories = sortedCategories
+            self.categoryCleaningStatus = Dictionary(uniqueKeysWithValues: sortedCategories.map { ($0, .pending) })
+            self.categoryCleanedSize = [:]
+        }
+        
+        // 3. 逐个分类清理
+        for category in sortedCategories {
+            await MainActor.run {
+                self.currentCleaningCategory = category
+                self.categoryCleaningStatus[category] = .cleaning
+            }
+            
+            // 获取该分类的选中项目
+            let categoryItems = selectedItems.filter { $0.type == category }
+            var categoryCleanedSize: Int64 = 0
+            var categoryFailedItems: [JunkItem] = []
+            
+            // 清理该分类的所有文件
+            for item in categoryItems {
+                let success = await deleteItem(item)
+                if success {
+                    categoryCleanedSize += item.size
+                    totalCleanedSize += item.size
+                } else {
+                    totalFailedSize += item.size
+                    categoryFailedItems.append(item)
+                }
+                
+                // 更新进度 - 先捕获值以避免 Swift 6 警告
+                let currentCleanedSize = categoryCleanedSize
+                await MainActor.run {
+                    self.categoryCleanedSize[category] = currentCleanedSize
+                }
+            }
+            
+            // 尝试使用管理员权限删除失败的文件
+            if !categoryFailedItems.isEmpty {
+                let failedPaths = categoryFailedItems.map { $0.path.path }
+                let (sudoCleanedSize, sudoSuccess) = await cleanWithAdminPrivileges(paths: failedPaths, items: categoryFailedItems)
+                if sudoSuccess {
+                    categoryCleanedSize += sudoCleanedSize
+                    totalCleanedSize += sudoCleanedSize
+                    totalFailedSize -= sudoCleanedSize
+                    // 先捕获值以避免 Swift 6 警告
+                    let currentCleanedSize = categoryCleanedSize
+                    await MainActor.run {
+                        self.categoryCleanedSize[category] = currentCleanedSize
+                    }
+                } else {
+                    needsAdmin = true
+                }
+            }
+            
+            // 标记该分类完成
+            await MainActor.run {
+                self.categoryCleaningStatus[category] = .completed
+            }
+            
+            // 稍微延迟以便用户看到进度
+            try? await Task.sleep(nanoseconds: 300_000_000) // 0.3秒
+        }
+        
+        // 4. 从 junkItems 中移除已清理的项目
+        await MainActor.run {
+            self.junkItems.removeAll { item in
+                selectedItems.contains { $0.id == item.id }
+            }
+            self.currentCleaningCategory = nil
+            DiskSpaceManager.shared.updateDiskSpace()
+        }
+        
+        return (totalCleanedSize, totalFailedSize, needsAdmin)
     }
     
     /// 检查应用是否可以安全瘦身

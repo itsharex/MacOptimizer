@@ -1531,12 +1531,6 @@ class SmartCleanerService: ObservableObject {
     // MARK: - 废纸篓扫描
     private func scanTrash() async -> [CleanerFileItem] {
         var items: [CleanerFileItem] = []
-        
-        // ✅ 修复：检查是否需要停止扫描（用户切换界面）
-        if await MainActor.run(body: { shouldStopScanning }) {
-            return items
-        }
-        
         let home = fileManager.homeDirectoryForCurrentUser
         let trashURL = home.appendingPathComponent(".Trash")
         
@@ -2978,29 +2972,27 @@ class SmartCleanerService: ObservableObject {
         
         // 刷新所有数据
         await MainActor.run { [failedFiles] in
-            // 只移除成功的，保留失败的和未选中的
+            // 只移除成功的，保留失败的
             let failedSet = Set(failedFiles.map(\.url))
             
-            // ✅ 修复：只保留删除失败的文件或未被选中的文件
-            userCacheFiles = userCacheFiles.filter { !failedSet.contains($0.url) || !$0.isSelected }
-            systemCacheFiles = systemCacheFiles.filter { !failedSet.contains($0.url) || !$0.isSelected }
-            oldUpdateFiles = oldUpdateFiles.filter { !failedSet.contains($0.url) || !$0.isSelected }
-            systemLogFiles = systemLogFiles.filter { !failedSet.contains($0.url) || !$0.isSelected }
-            userLogFiles = userLogFiles.filter { !failedSet.contains($0.url) || !$0.isSelected }
+            userCacheFiles = userCacheFiles.filter { failedSet.contains($0.url) }
+            systemCacheFiles = systemCacheFiles.filter { failedSet.contains($0.url) }
+            oldUpdateFiles = oldUpdateFiles.filter { failedSet.contains($0.url) }
+            systemLogFiles = systemLogFiles.filter { failedSet.contains($0.url) }
+            userLogFiles = userLogFiles.filter { failedSet.contains($0.url) }
             
             // 对于 duplicateGroups 和 similarPhotoGroups，重新扫描比较好，因为结构变了
-            // 这里简单处理：如果某个文件还在，就保留它（保留第一个文件或删除失败的文件）
+            // 这里简单处理：如果某个文件还在，就保留它
              duplicateGroups = duplicateGroups.map { group in
-                 DuplicateGroup(hash: group.hash, files: group.files.filter { !failedSet.contains($0.url) || !group.files.first(where: { $0.url == $0.url })!.isSelected || $0 == group.files.first })
+                 DuplicateGroup(hash: group.hash, files: group.files.filter { failedSet.contains($0.url) || $0 == group.files.first })
              }.filter { $0.files.count > 1 }
             
              similarPhotoGroups = similarPhotoGroups.map { group in
-                 DuplicateGroup(hash: group.hash, files: group.files.filter { !failedSet.contains($0.url) || !group.files.first(where: { $0.url == $0.url })!.isSelected || $0 == group.files.first })
+                 DuplicateGroup(hash: group.hash, files: group.files.filter { failedSet.contains($0.url) || $0 == group.files.first })
              }.filter { $0.files.count > 1 }
             
-            // ✅ 修复：同样的逻辑应用到其他文件数组
-            localizationFiles = localizationFiles.filter { !failedSet.contains($0.url) || !$0.isSelected }
-            largeFiles = largeFiles.filter { !failedSet.contains($0.url) || !$0.isSelected }
+            localizationFiles = localizationFiles.filter { failedSet.contains($0.url) || !$0.isSelected}
+            largeFiles = largeFiles.filter { failedSet.contains($0.url) || !$0.isSelected }
             
             
             // 最终状态更新 (Capture stats before clearing logic completely, though arrays are filtered above)

@@ -324,8 +324,8 @@ struct JunkCleanerView: View {
                 Text(loc.currentLanguage == .chinese ? "系统垃圾" : "System Junk")
                     .foregroundColor(.white.opacity(0.8))
                 Spacer()
-                // Assitant Pill
-                 Button(action: { /* Help */ }) {
+                // Assistant Pill
+                Button(action: { /* Help */ }) {
                     HStack(spacing: 6) {
                         Circle().fill(Color(hex: "40C4FF")).frame(width: 6, height: 6)
                         Text(loc.currentLanguage == .chinese ? "助手" : "Assistant")
@@ -344,47 +344,49 @@ struct JunkCleanerView: View {
             
             Spacer()
             
-            HStack(spacing: 80) { // Increased spacing
-                // Left: Image - Slightly Larger
+            HStack(spacing: 80) {
+                // Left: Image
                 if let imagePath = Bundle.main.path(forResource: "system_clean_menu", ofType: "png"),
                    let nsImage = NSImage(contentsOfFile: imagePath) {
                     Image(nsImage: nsImage)
                         .resizable()
                         .aspectRatio(contentMode: .fit)
-                        .frame(width: 420, height: 420) // Increased size
+                        .frame(width: 380, height: 380)
                         .shadow(color: .black.opacity(0.2), radius: 20, y: 10)
                 }
                 
-                // Right: Results Text - Refined Typography
+                // Right: Results Text - 动态显示已选中的分类
                 VStack(alignment: .leading, spacing: 12) {
                     Text(loc.currentLanguage == .chinese ? "扫描完毕" : "Scan Complete")
                         .font(.system(size: 28, weight: .medium))
                         .foregroundColor(.white)
                     
                     HStack(alignment: .firstTextBaseline, spacing: 12) {
-                        Text(ByteCountFormatter.string(fromByteCount: cleaner.totalSize, countStyle: .file))
-                            .font(.system(size: 72, weight: .light)) // Much larger, thinner
-                            .foregroundColor(Color(hex: "40C4FF")) // Bright Cyan/Blue
+                        Text(ByteCountFormatter.string(fromByteCount: cleaner.selectedSize, countStyle: .file))
+                            .font(.system(size: 60, weight: .light))
+                            .foregroundColor(Color(hex: "40C4FF"))
                         
-                        Text(loc.currentLanguage == .chinese ? "智能选择" : "Smart Select")
+                        Text(loc.currentLanguage == .chinese ? "已选中" : "Selected")
                             .font(.system(size: 14))
                             .foregroundColor(.white.opacity(0.6))
                     }
                     
+                    // 动态显示已选中的分类列表
                     VStack(alignment: .leading, spacing: 6) {
                         Text(loc.currentLanguage == .chinese ? "包括" : "Includes")
-                             .font(.system(size: 14))
-                             .foregroundColor(.white.opacity(0.6))
+                            .font(.system(size: 14))
+                            .foregroundColor(.white.opacity(0.6))
                         
-                        Group {
-                            Text("• " + (loc.currentLanguage == .chinese ? "用户缓存文件" : "User Cache Files"))
-                            Text("• " + (loc.currentLanguage == .chinese ? "系统缓存文件" : "System Cache Files"))
-                            Text("• " + (loc.currentLanguage == .chinese ? "用户日志文件" : "User Log Files"))
-                            Text("• " + (loc.currentLanguage == .chinese ? "系统日志文件" : "System Log Files"))
+                        // 获取已选中的分类
+                        ForEach(selectedCategories, id: \.self) { category in
+                            HStack(spacing: 6) {
+                                Text("•")
+                                Text(category.rawValue)
+                            }
+                            .font(.system(size: 14))
+                            .foregroundColor(.white.opacity(0.8))
+                            .padding(.leading, 8)
                         }
-                        .font(.system(size: 14))
-                        .foregroundColor(.white.opacity(0.8))
-                        .padding(.leading, 8)
                     }
                     .padding(.bottom, 20)
                     
@@ -410,31 +412,38 @@ struct JunkCleanerView: View {
             
             Spacer()
             
-            // Clean Button - Refined Gradient Ring
-             Button(action: { startCleaning() }) {
-                 ZStack {
-                     // Outer Glow
-                     Circle()
-                         .fill(RadialGradient(colors: [Color.white.opacity(0.2), .clear], center: .center, startRadius: 50, endRadius: 90))
-                         .frame(width: 90, height: 90) // Smaller, subtler glow
-                     
-                     Circle()
-                         .stroke(LinearGradient(colors: [.white.opacity(0.5), .blue.opacity(0.5)], startPoint: .top, endPoint: .bottom), lineWidth: 2)
-                         .frame(width: 84, height: 84)
+            // Clean Button
+            Button(action: { startCleaning() }) {
+                ZStack {
+                    Circle()
+                        .fill(RadialGradient(colors: [Color.white.opacity(0.2), .clear], center: .center, startRadius: 50, endRadius: 90))
+                        .frame(width: 90, height: 90)
+                    
+                    Circle()
+                        .stroke(LinearGradient(colors: [.white.opacity(0.5), .blue.opacity(0.5)], startPoint: .top, endPoint: .bottom), lineWidth: 2)
+                        .frame(width: 84, height: 84)
 
-                     Circle()
-                         .fill(LinearGradient(colors: [Color(hex: "7D7AFF").opacity(0.8), Color(hex: "5E5CE6").opacity(0.8)], startPoint: .topLeading, endPoint: .bottomTrailing))
-                         .frame(width: 72, height: 72)
-                         .shadow(radius: 5)
-                     
-                     Text(loc.currentLanguage == .chinese ? "清理" : "Clean")
-                         .font(.system(size: 16, weight: .medium))
-                         .foregroundColor(.white)
-                 }
+                    Circle()
+                        .fill(LinearGradient(colors: [Color(hex: "7D7AFF").opacity(0.8), Color(hex: "5E5CE6").opacity(0.8)], startPoint: .topLeading, endPoint: .bottomTrailing))
+                        .frame(width: 72, height: 72)
+                        .shadow(radius: 5)
+                    
+                    Text(loc.currentLanguage == .chinese ? "清理" : "Clean")
+                        .font(.system(size: 16, weight: .medium))
+                        .foregroundColor(.white)
+                }
             }
-             .buttonStyle(.plain)
-             .padding(.bottom, 60)
+            .buttonStyle(.plain)
+            .padding(.bottom, 60)
         }
+    }
+    
+    /// 获取已选中的分类列表（按大小降序）
+    private var selectedCategories: [JunkType] {
+        let selectedItems = cleaner.junkItems.filter { $0.isSelected }
+        let categorySizes: [JunkType: Int64] = Dictionary(grouping: selectedItems, by: { $0.type })
+            .mapValues { items in items.reduce(0) { $0 + $1.size } }
+        return categorySizes.keys.sorted { categorySizes[$0] ?? 0 > categorySizes[$1] ?? 0 }
     }
     
     // ... Detail/Cleaning/Finished Pages (Unchanged for now) ...
@@ -538,65 +547,283 @@ struct JunkCleanerView: View {
     }
     
     private var cleaningPage: some View {
-       VStack(spacing: 0) {
-            Text(loc.currentLanguage == .chinese ? "正在清理..." : "Cleaning...")
-                .font(.title)
-                .foregroundColor(.white)
-                .padding()
-            ProgressView()
-                .scaleEffect(1.5)
-                .tint(.purple) // Purple Spinner
-       }
+        ZStack {
+            // 主内容
+            VStack(spacing: 0) {
+                // 顶部导航栏 - 占位，保持导航栏高度
+                HStack {
+                    Spacer()
+                    Text(loc.currentLanguage == .chinese ? "系统垃圾" : "System Junk")
+                        .foregroundColor(.white.opacity(0.8))
+                    Spacer()
+                }
+                .padding(.horizontal, 24)
+                .padding(.top, 20)
+                
+                Spacer()
+                
+                // 主内容区域
+                HStack(alignment: .top, spacing: 60) {
+                    // 左侧：大图标
+                    VStack {
+                        if let imagePath = Bundle.main.path(forResource: "system_clean_menu", ofType: "png"),
+                           let nsImage = NSImage(contentsOfFile: imagePath) {
+                            Image(nsImage: nsImage)
+                                .resizable()
+                                .aspectRatio(contentMode: .fit)
+                                .frame(width: 300, height: 300) // 稍微调大一点
+                                .shadow(color: .black.opacity(0.3), radius: 25, y: 15)
+                                .rotationEffect(.degrees(cleaningRotation))
+                                .onAppear {
+                                    withAnimation(.linear(duration: 8).repeatForever(autoreverses: false)) {
+                                        cleaningRotation = 360
+                                    }
+                                }
+                                .onDisappear {
+                                    cleaningRotation = 0
+                                }
+                        }
+                    }
+                    .frame(width: 360, height: 360) // 固定容器大小
+                    
+                    // 右侧：标题 + 分类列表
+                    VStack(alignment: .leading, spacing: 0) {
+                        // 标题 - 增加顶部 Padding 使其下沉，与左侧图片顶部大致对齐或稍微靠下
+                        Text(loc.currentLanguage == .chinese ? "正在清理系统..." : "Cleaning System...")
+                            .font(.system(size: 26, weight: .semibold)) // 字体加大加粗
+                            .foregroundColor(.white)
+                            .padding(.bottom, 32) // 增加标题到底部的间距
+                            .padding(.top, 40) // 核心调整：文字下沉
+                        
+                        // 分类列表 - 增加间距
+                        VStack(alignment: .leading, spacing: 20) {
+                            ForEach(cleaner.cleaningCategories, id: \.self) { category in
+                                CleaningCategoryRow(
+                                    category: category,
+                                    status: cleaner.categoryCleaningStatus[category] ?? .pending,
+                                    cleanedSize: cleaner.categoryCleanedSize[category] ?? 0,
+                                    totalSize: getCategorySelectedSize(category)
+                                )
+                            }
+                        }
+                    }
+                    .frame(maxWidth: 450, alignment: .leading)
+                    
+                    Spacer()
+                }
+                .padding(.horizontal, 40)
+                // 整体稍微上移一点，保持视觉中心
+                .offset(y: -40)
+                
+                Spacer()
+            }
+            
+            // 底部停止按钮
+            VStack {
+                Spacer()
+                Button(action: { 
+                    // 停止清理功能
+                }) {
+                    ZStack {
+                        // 外圈渐变 - 绿色
+                        Circle()
+                            .stroke(
+                                AngularGradient(
+                                    gradient: Gradient(colors: [.green.opacity(0.8), .teal.opacity(0.8), .green.opacity(0.8)]),
+                                    center: .center
+                                ),
+                                lineWidth: 4
+                            )
+                            .frame(width: 80, height: 80)
+                            .shadow(color: .green.opacity(0.3), radius: 10)
+                        
+                        // 内圈背景
+                        Circle()
+                            .fill(Color.white.opacity(0.05))
+                            .frame(width: 72, height: 72)
+                        
+                        Text(loc.currentLanguage == .chinese ? "停止" : "Stop")
+                            .font(.system(size: 16, weight: .medium))
+                            .foregroundColor(.white.opacity(0.9))
+                    }
+                }
+                .buttonStyle(.plain)
+                .padding(.bottom, 50)
+            }
+        }
+    }
+    
+    // 清理动画旋转角度
+    @State private var cleaningRotation: Double = 0
+    
+    /// 获取某个分类中已选中项目的总大小
+    private func getCategorySelectedSize(_ category: JunkType) -> Int64 {
+        cleaner.junkItems
+            .filter { $0.type == category && $0.isSelected }
+            .reduce(0) { $0 + $1.size }
     }
     
     private var finishedPage: some View {
-        VStack {
-             HStack {
-                Button(action: { cleaner.reset(); showCleaningFinished = false }) {
-                    HStack(spacing: 4) {
-                        Image(systemName: "chevron.left")
-                        Text(loc.currentLanguage == .chinese ? "重新开始" : "Start Over")
+        ZStack {
+            // 主内容
+            VStack(spacing: 0) {
+                // 顶部导航栏
+                HStack {
+                    Button(action: { cleaner.reset(); showCleaningFinished = false }) {
+                        HStack(spacing: 4) {
+                            Image(systemName: "chevron.left")
+                            Text(loc.currentLanguage == .chinese ? "重新开始" : "Start Over")
+                        }
+                        .foregroundColor(.white.opacity(0.8))
                     }
-                    .foregroundColor(.secondaryText)
+                    .buttonStyle(.plain)
+                    
+                    Spacer()
+                    
+                    Text(loc.currentLanguage == .chinese ? "系统垃圾" : "System Junk")
+                        .foregroundColor(.white.opacity(0.8))
+                    
+                    Spacer()
+                    
+                    // 助手按钮占位
+                    Button(action: {}) {
+                        HStack(spacing: 6) {
+                            Circle().fill(Color(hex: "40C4FF")).frame(width: 6, height: 6)
+                            Text(loc.currentLanguage == .chinese ? "助手" : "Assistant")
+                        }
+                        .font(.system(size: 12))
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 4)
+                        .background(Color.black.opacity(0.2))
+                        .cornerRadius(12)
+                    }
+                    .buttonStyle(.plain)
                 }
-                .buttonStyle(.plain)
+                .padding(.horizontal, 24)
+                .padding(.top, 20)
+                
+                Spacer()
+                
+                // 主内容区域 - 左图右文
+                HStack(spacing: 80) {
+                    // 左侧：大图标
+                    if let imagePath = Bundle.main.path(forResource: "system_clean_menu", ofType: "png"),
+                       let nsImage = NSImage(contentsOfFile: imagePath) {
+                        Image(nsImage: nsImage)
+                            .resizable()
+                            .aspectRatio(contentMode: .fit)
+                            .frame(width: 380, height: 380)
+                            .shadow(color: .black.opacity(0.2), radius: 20, y: 10)
+                    }
+                    
+                    // 右侧：清理结果信息
+                    VStack(alignment: .leading, spacing: 16) {
+                        Text(loc.currentLanguage == .chinese ? "清理完毕" : "Cleanup Complete")
+                            .font(.system(size: 28, weight: .medium))
+                            .foregroundColor(.white)
+                        
+                        // 清理大小 + 勾选图标
+                        HStack(spacing: 12) {
+                            Image(systemName: "checkmark.circle.fill")
+                                .font(.system(size: 24))
+                                .foregroundColor(.green)
+                            
+                            Text(ByteCountFormatter.string(fromByteCount: cleanResult?.cleaned ?? cleanedAmount, countStyle: .file))
+                                .font(.system(size: 36, weight: .light))
+                                .foregroundColor(Color(hex: "40C4FF"))
+                            
+                            Text(loc.currentLanguage == .chinese ? "已清理" : "Cleaned")
+                                .font(.system(size: 14))
+                                .foregroundColor(.white.opacity(0.6))
+                        }
+                        
+                        // 磁盘剩余空间信息
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(loc.currentLanguage == .chinese ? 
+                                 "您现在启动磁盘中有 \(DiskSpaceManager.shared.formattedFree) 可用空间。" :
+                                 "You now have \(DiskSpaceManager.shared.formattedFree) available on your startup disk.")
+                                .font(.system(size: 14))
+                                .foregroundColor(.white.opacity(0.7))
+                            
+                            Text(loc.currentLanguage == .chinese ? 
+                                 "通过检查其余项目，恢复更多空间。" :
+                                 "Check remaining items to recover more space.")
+                                .font(.system(size: 14))
+                                .foregroundColor(.white.opacity(0.5))
+                        }
+                        .padding(.top, 8)
+                        
+                        // 操作按钮
+                        HStack(spacing: 16) {
+                            Button(action: { 
+                                // 跳转到详情页查看剩余项目，而不是重置
+                                showCleaningFinished = false
+                                showingDetails = true
+                            }) {
+                                Text(loc.currentLanguage == .chinese ? "查看剩余项目" : "Review Remaining")
+                                    .font(.system(size: 14, weight: .medium))
+                                    .foregroundColor(.white)
+                                    .padding(.horizontal, 20)
+                                    .padding(.vertical, 10)
+                                    .background(Color.white.opacity(0.15))
+                                    .cornerRadius(8)
+                            }
+                            .buttonStyle(.plain)
+                            
+                            Button(action: {
+                                // 分享成果功能（可选）
+                            }) {
+                                HStack(spacing: 6) {
+                                    Image(systemName: "square.and.arrow.up")
+                                    Text(loc.currentLanguage == .chinese ? "分享成果" : "Share Result")
+                                }
+                                .font(.system(size: 14, weight: .medium))
+                                .foregroundColor(.white.opacity(0.8))
+                                .padding(.horizontal, 20)
+                                .padding(.vertical, 10)
+                                .background(Color.white.opacity(0.08))
+                                .cornerRadius(8)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                        .padding(.top, 16)
+                    }
+                }
+                .padding(.horizontal, 40)
+                
                 Spacer()
             }
-            .padding()
-            Spacer()
             
-            ZStack {
-                 Circle()
-                    .fill(LinearGradient(colors: [.purple.opacity(0.3), .blue.opacity(0.3)], startPoint: .topLeading, endPoint: .bottomTrailing))
-                    .frame(width: 200, height: 200)
-                 Image(systemName: "checkmark")
-                    .font(.system(size: 80))
-                    .foregroundColor(Color(hex: "E0B0FF"))
+            // 底部左侧 - 查看日志
+            VStack {
+                Spacer()
+                HStack {
+                    Button(action: {
+                        // 打开删除日志
+                        let logPath = FileManager.default.homeDirectoryForCurrentUser
+                            .appendingPathComponent("Library/Application Support/MacOptimizer/deletion_log.json")
+                        NSWorkspace.shared.activateFileViewerSelecting([logPath])
+                    }) {
+                        HStack(spacing: 6) {
+                            Image(systemName: "exclamationmark.triangle")
+                                .font(.system(size: 12))
+                            Text(loc.currentLanguage == .chinese ? "查看日志" : "View Log")
+                                .font(.system(size: 13))
+                        }
+                        .foregroundColor(.yellow.opacity(0.8))
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.leading, 24)
+                    .padding(.bottom, 20)
+                    
+                    Spacer()
+                }
             }
-            
-            Text(loc.currentLanguage == .chinese ? "清理完成" : "Cleanup Complete")
-                .font(.title)
-                .foregroundColor(.white)
-                .padding()
-            
-            Text(ByteCountFormatter.string(fromByteCount: cleanResult?.cleaned ?? cleanedAmount, countStyle: .file))
-                .font(.system(size: 40))
-                .foregroundStyle(LinearGradient(colors: [.white, .purple], startPoint: .top, endPoint: .bottom))
-            
-            Text(loc.currentLanguage == .chinese ? "已释放空间" : "Space Freed")
-                .foregroundColor(.secondaryText)
-            
-            Spacer()
-            
-            Button(action: { cleaner.reset(); showCleaningFinished = false }) {
-                Text(loc.currentLanguage == .chinese ? "完成" : "Done")
-                    .padding(.horizontal, 40)
-                    .padding(.vertical, 10)
-                    .background(Color.white.opacity(0.1))
-                    .cornerRadius(20)
-            }
-            .buttonStyle(.plain)
-            .padding(.bottom, 40)
+        }
+        .onAppear {
+            // 清理完成后更新磁盘空间
+            DiskSpaceManager.shared.updateDiskSpace()
         }
     }
 
@@ -611,9 +838,10 @@ struct JunkCleanerView: View {
         // scanState 会通过 cleaner.isCleaning 自动变为 .cleaning
         Task {
             cleaner.isCleaning = true
-            let result = await cleaner.cleanSelected()
+            // 使用逐分类清理方法，按设计图要求逐个分类清理
+            let result = await cleaner.cleanSelectedByCategory()
             cleanResult = (result.cleaned, result.failed, result.requiresAdmin)
-            try? await Task.sleep(nanoseconds: 1_000_000_000)
+            try? await Task.sleep(nanoseconds: 500_000_000) // 0.5秒
             cleaner.isCleaning = false
             showCleaningFinished = true
         }
@@ -657,20 +885,28 @@ struct JunkSidebarView: View {
             .padding(.vertical, 12)
             .background(Color.white.opacity(0.05))
             
-            List(selection: $selectedCategory) {
-                ForEach(cleaner.junkItems.map { $0.type }.removingDuplicates(), id: \.self) { type in
-                    JunkCategoryRow(type: type, 
-                                isSelected: selectedCategory == type,
-                                cleaner: cleaner)
-                        .onTapGesture {
-                            selectedCategory = type
-                        }
-                        .listRowInsets(EdgeInsets())
-                        .listRowBackground(Color.clear) // Handle selection manually in row
+            ScrollView {
+                LazyVStack(spacing: 0) {
+                    ForEach(cleaner.junkItems.map { $0.type }.removingDuplicates(), id: \.self) { type in
+                        JunkCategoryRow(type: type, 
+                                    // 传递选中状态用于可能的微弱高亮，或者完全不传递
+                                    // 这里保留 isSelected 以便将来可以添加极简的指示，但目前 Row 内部已去除了强背景
+                                    isSelected: selectedCategory == type,
+                                    cleaner: cleaner)
+                            .background(
+                                // 为当前选中的分类添加一个极淡的背景，类似右侧 Hover 效果，确保用户知道自己在看哪个分类
+                                // 如果用户完全不想看见背景，可以改为 Color.clear，但我建议保留一点点提示
+                                RoundedRectangle(cornerRadius: 8)
+                                    .fill(selectedCategory == type ? Color.white.opacity(0.1) : Color.clear)
+                                    .padding(.horizontal, 4)
+                            )
+                            .onTapGesture {
+                                selectedCategory = type
+                            }
+                    }
                 }
+                .padding(.vertical, 8)
             }
-            .listStyle(.plain)
-            .scrollContentBackground(.hidden) // Important: Remove default List background
             .frame(minWidth: 280)
         }
         .background(Color.black.opacity(0.1)) // More transparent dark sidebar
@@ -883,8 +1119,8 @@ struct JunkCategoryRow: View {
             .background(
                 RoundedRectangle(cornerRadius: 8)
                     .fill(
-                        isSelected ? Color.white.opacity(0.15) : 
-                        (isHovering ? Color.white.opacity(0.08) : Color.clear)
+                        // 移除选中背景色，只保留 Hover 效果
+                        isHovering ? Color.white.opacity(0.08) : Color.clear
                     )
             )
         }
@@ -1136,3 +1372,84 @@ struct CircleCheckboxStyle: ToggleStyle {
 
 // MARK: - Universal Binary Warning Dialog
 // UniversalBinaryWarningDialog 已移除 - 通用二进制瘦身功能已禁用
+
+// MARK: - 清理分类行组件
+struct CleaningCategoryRow: View {
+    let category: JunkType
+    let status: JunkCleaner.CleaningStatus
+    let cleanedSize: Int64
+    let totalSize: Int64
+    
+    @ObservedObject private var loc = LocalizationManager.shared
+    @State private var isAnimating = false
+    
+    var body: some View {
+        HStack(spacing: 16) {
+            // 分类图标 - 使用圆角矩形背景
+            ZStack {
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(categoryColor.opacity(0.2))
+                    .frame(width: 40, height: 40)
+                
+                Image(systemName: category.icon)
+                    .font(.system(size: 18))
+                    .foregroundColor(categoryColor)
+            }
+            
+            // 分类名称
+            Text(category.rawValue)
+                .font(.system(size: 15, weight: .medium))
+                .foregroundColor(.white)
+            
+            Spacer()
+            
+            // 状态指示器
+            switch status {
+            case .pending:
+                // 等待中 - 显示省略号按钮
+                Button(action: {}) {
+                    Text("•••")
+                        .font(.system(size: 14))
+                        .foregroundColor(.white.opacity(0.5))
+                }
+                .buttonStyle(.plain)
+                
+            case .cleaning:
+                // 正在清理 - 显示大小和加载动画
+                HStack(spacing: 8) {
+                    Text(ByteCountFormatter.string(fromByteCount: totalSize, countStyle: .file))
+                        .font(.system(size: 13))
+                        .foregroundColor(.white.opacity(0.8))
+                    
+                    // 加载动画
+                    ProgressView()
+                        .scaleEffect(0.6)
+                        .tint(.white)
+                }
+                
+            case .completed:
+                // 完成 - 显示勾选图标
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.system(size: 18))
+                    .foregroundColor(.green)
+            }
+        }
+        .padding(.vertical, 8)
+    }
+    
+    private var categoryColor: Color {
+        switch category {
+        case .downloads: return Color(hex: "5AC8FA")        // 蓝色
+        case .systemCache: return Color(hex: "5AC8FA")      // 蓝色
+        case .userLogs: return Color(hex: "8E8E93")         // 灰色
+        case .systemLogs: return Color(hex: "8E8E93")       // 灰色
+        case .userCache: return Color(hex: "FF9F0A")        // 橙色
+        case .unusedDiskImages: return Color(hex: "A0A0A0") // 银色
+        case .xcodeDerivedData: return Color(hex: "BF5AF2") // 紫色
+        case .browserCache: return Color(hex: "30D158")     // 绿色
+        case .chatCache: return Color(hex: "FF375F")        // 红色
+        case .crashReports: return Color(hex: "FF9F0A")     // 橙色
+        default: return Color(hex: "8E8E93")                // 默认灰色
+        }
+    }
+}
