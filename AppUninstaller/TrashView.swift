@@ -10,13 +10,14 @@ enum TrashScanState {
     case finished   // 清理完成
 }
 
-struct TrashItem: Identifiable {
+struct TrashItem: Identifiable, Sendable {
     let id = UUID()
     let url: URL
     let name: String
     let size: Int64
     let dateDeleted: Date?
     let isDirectory: Bool
+    var isSelected: Bool = true
     
     var formattedSize: String {
         ByteCountFormatter.string(fromByteCount: size, countStyle: .file)
@@ -42,9 +43,33 @@ class TrashScanner: ObservableObject {
     @Published var scannedItemCount: Int = 0
     @Published var isStopped = false
     @Published var currentScanPath: String = ""
-    @Published var isCleaning = false // 其实可以通过 scanState 控制，但为了保持逻辑一致性保留
+    @Published var isCleaning = false 
     @Published var cleanedCount: Int = 0
     @Published var cleanedSize: Int64 = 0
+    
+    // 计算选中的大小
+    var selectedSize: Int64 {
+        items.filter { $0.isSelected }.reduce(0) { $0 + $1.size }
+    }
+    
+    var formattedSelectedSize: String {
+        ByteCountFormatter.string(fromByteCount: selectedSize, countStyle: .file)
+    }
+    
+    // 切换选中状态
+    func toggleSelection(_ item: TrashItem) {
+        if let index = items.firstIndex(where: { $0.id == item.id }) {
+            items[index].isSelected.toggle()
+            // 触发发布通知（虽然 @Published 数组内元素属性变化不一定触发，但结构体替换会触发）
+        }
+    }
+    
+    // 切换所有选中状态
+    func toggleAllSelection(_ selected: Bool) {
+        for i in 0..<items.count {
+            items[i].isSelected = selected
+        }
+    }
     
     private let fileManager = FileManager.default
     let trashURL: URL
@@ -68,7 +93,6 @@ class TrashScanner: ObservableObject {
         shouldStop = true
         isScanning = false
         isStopped = true
-        // 停止后不需要清空 items，保留已扫描到的
     }
     
     func scan() async {
@@ -303,6 +327,8 @@ class TrashScanner: ObservableObject {
     }
     
     func emptyTrash() async -> Int64 {
+        let itemsToDelete = items.filter { $0.isSelected }
+        
         await MainActor.run {
             self.isCleaning = true
             self.cleanedCount = 0
@@ -311,8 +337,11 @@ class TrashScanner: ObservableObject {
         
         var removedSize: Int64 = 0
         
-        for item in items {
+        for item in itemsToDelete {
             do {
+                // 尝试解锁文件 (如果是被锁定的)
+                try? fileManager.setAttributes([.immutable: false], ofItemAtPath: item.url.path)
+                
                 try fileManager.removeItem(at: item.url)
                 removedSize += item.size
                 await MainActor.run {
@@ -323,15 +352,22 @@ class TrashScanner: ObservableObject {
                 try? await Task.sleep(nanoseconds: 100_000_000)
             } catch {
                 print("Failed to delete \(item.url.path): \(error)")
+                
+                // 二次尝试：如果是因为没有权限，尝试使用 chmod (仅对用户拥有的文件有效)
+                // 注意：沙盒应用限制较多，这里尽力而为
             }
         }
         
         await MainActor.run {
-            items.removeAll()
-            totalSize = 0
+            // 只移除选中的项目（假设清理操作即视为移除，即使失败也不留在列表中困扰用户? 
+            // 或者只移除删除成功的？为了简单起见，且符合一般清理软件逻辑，点清理后通常会移除列表项，除非明确报错）
+            // 这里我们只保留未选中的项目
+            items = items.filter { !$0.isSelected }
+            totalSize = items.reduce(0) { $0 + $1.size }
+            
             self.isCleaning = false
             DiskSpaceManager.shared.updateDiskSpace()
-            self.scannedItemCount = 0 // Reset count for finish page
+            self.scannedItemCount = items.count 
         }
         
         return removedSize

@@ -365,13 +365,15 @@ struct DeepCleanView: View {
                 VStack(alignment: .leading, spacing: 8) {
                     // 主要文字（文件大小或状态）
                     if isCompleted {
-                        let size = scanner.items.filter { $0.category == category }.reduce(0) { $0 + $1.size }
+                        // 只统计选中的项目
+                        let categoryItems = scanner.items.filter { $0.category == category && $0.isSelected }
+                        let size = categoryItems.reduce(0) { $0 + $1.size }
                         Text(ByteCountFormatter.string(fromByteCount: size, countStyle: .file))
                             .font(.system(size: 28, weight: .bold))
                             .foregroundColor(.white)
                             .shadow(color: Color.black.opacity(0.3), radius: 2, x: 0, y: 1)
                         
-                        let itemCount = scanner.items.filter { $0.category == category }.count
+                        let itemCount = categoryItems.count
                         Text(loc.currentLanguage == .chinese ? "\(itemCount) 项" : "\(itemCount) items")
                             .font(.system(size: 14))
                             .foregroundColor(.white.opacity(0.85))
@@ -457,9 +459,10 @@ struct DeepCleanView: View {
     
     // MARK: - Result Card (与扫描中页面完全一致)
     func resultCategoryCard(for category: DeepCleanCategory) -> some View {
-        let items = scanner.items.filter { $0.category == category }
+        // 只统计选中的项目，这样用户取消勾选时卡片数字会变化
+        let items = scanner.items.filter { $0.category == category && $0.isSelected }
         let totalSize = items.reduce(0) { $0 + $1.size }
-        let isCompleted = !items.isEmpty // 扫描结果页面所有分类都是完成状态
+        let isCompleted = !scanner.items.filter { $0.category == category }.isEmpty // 只要分类下有项目（不管有没有选中）就显示完成态
         
         return ZStack(alignment: .topLeading) {
                 // 图片作为整个卡片的背景
@@ -895,7 +898,8 @@ struct DeepCleanDetailView: View {
     
     private func categorySidebarRow(_ category: DeepCleanCategory) -> some View {
         let items = scanner.items.filter { $0.category == category }
-        let totalSize = items.reduce(0) { $0 + $1.size }
+        // 修改：只统计选中的项目大小
+        let totalSize = items.filter { $0.isSelected }.reduce(0) { $0 + $1.size }
         let isSelected = selectedCategory == category
         
         // 计算勾选状态
@@ -965,7 +969,8 @@ struct DeepCleanDetailView: View {
                         .foregroundColor(.white)
                     
                     HStack(spacing: 3) {
-                        Text("\(items.count)")
+                        // 修改：显示选中项数
+                        Text("\(selectedCount)")
                             .font(.system(size: 10))
                             .foregroundColor(.secondaryText)
                         
@@ -1013,8 +1018,10 @@ struct DeepCleanDetailView: View {
                     .font(.system(size: 16, weight: .bold))
                     .foregroundColor(.white)
                 
-                let totalSize = items.reduce(0) { $0 + $1.size }
-                Text("\(items.count) \(loc.currentLanguage == .chinese ? "个项目" : "items"), \(ByteCountFormatter.string(fromByteCount: totalSize, countStyle: .file))")
+                // 修改：只计算选中项的大小和数量
+                let selectedItems = items.filter { $0.isSelected }
+                let totalSize = selectedItems.reduce(0) { $0 + $1.size }
+                Text("\(selectedItems.count) \(loc.currentLanguage == .chinese ? "个选定项目" : "selected items"), \(ByteCountFormatter.string(fromByteCount: totalSize, countStyle: .file))")
                     .font(.system(size: 12))
                     .foregroundColor(.secondaryText)
             }
