@@ -868,14 +868,22 @@ struct SmartCleanerView: View {
                         .resizable()
                         .aspectRatio(contentMode: .fit)
                         .frame(width: 96, height: 96)
-                        .modifier(ScanningAnimationModifier(isScanning: isActive))
+                        .modifier(SmartIconAnimationModifier(
+                            type: getAnimationType(for: title),
+                            isScanning: isActive,
+                            isCleaning: state == .cleaning && isActive
+                        ))
                 } else if let imagePath = Bundle.main.path(forResource: iconName, ofType: "png"),
                    let nsImage = NSImage(contentsOfFile: imagePath) {
                     Image(nsImage: nsImage)
                         .resizable()
                         .aspectRatio(contentMode: .fit)
                         .frame(width: 72, height: 72)
-                        .modifier(ScanningAnimationModifier(isScanning: isActive))
+                        .modifier(SmartIconAnimationModifier(
+                            type: getAnimationType(for: title),
+                            isScanning: isActive,
+                            isCleaning: state == .cleaning && isActive
+                        ))
                 } else {
                     Image(systemName: "questionmark.circle")
                         .font(.system(size: 48))
@@ -1036,7 +1044,95 @@ struct SmartCleanerView: View {
         .frame(maxWidth: 320)
     }
 
-    // MARK: - Animation Modifier
+    // MARK: - Smart Icon Animation Modifier
+    enum SmartIconType {
+        case cleanup
+        case protection
+        case speed
+        case unknown
+    }
+    
+    private func getAnimationType(for title: String) -> SmartIconType {
+        // Simple mapping based on title text
+        // Note: Localization aware check
+        let lower = title.lowercased()
+        if lower.contains("clean") || lower.contains("清理") { return .cleanup }
+        if lower.contains("protect") || lower.contains("保护") { return .protection }
+        if lower.contains("speed") || lower.contains("速度") { return .speed }
+        return .unknown
+    }
+
+    struct SmartIconAnimationModifier: ViewModifier {
+        let type: SmartIconType
+        let isScanning: Bool
+        let isCleaning: Bool
+        
+        @State private var phase: Double = 0
+        @State private var isAnimating: Bool = false
+        
+        func body(content: Content) -> some View {
+            Group {
+                switch type {
+                case .cleanup:
+                    // Disk/Radar Animation
+                    if isScanning {
+                        content
+                            .rotationEffect(Angle(degrees: isAnimating ? 360 : 0))
+                            .animation(Animation.linear(duration: 2.0).repeatForever(autoreverses: false), value: isAnimating)
+                    } else if isCleaning {
+                        // Fast vibration
+                         content
+                            .offset(x: isAnimating ? -2 : 2, y: isAnimating ? 2 : -2)
+                            .animation(Animation.linear(duration: 0.1).repeatForever(autoreverses: true), value: isAnimating)
+                    } else {
+                        content
+                    }
+                    
+                case .protection:
+                    // Shield Pulse/Shimmer
+                    if isScanning || isCleaning {
+                        content
+                            .scaleEffect(isAnimating ? 1.05 : 0.95)
+                            .opacity(isAnimating ? 1.0 : 0.8)
+                            .animation(Animation.easeInOut(duration: 1.0).repeatForever(autoreverses: true), value: isAnimating)
+                    } else {
+                        content
+                    }
+                    
+                case .speed:
+                    // Speedometer Needle Wobble
+                    if isScanning {
+                         content
+                            .rotationEffect(Angle(degrees: isAnimating ? 15 : -15))
+                            .animation(Animation.easeInOut(duration: 0.4).repeatForever(autoreverses: true), value: isAnimating)
+                    } else if isCleaning {
+                         // Max Speed Shake
+                         content
+                            .scaleEffect(isAnimating ? 1.1 : 1.0)
+                            .animation(Animation.easeInOut(duration: 0.2).repeatForever(autoreverses: true), value: isAnimating)
+                    } else {
+                        content
+                    }
+                    
+                case .unknown:
+                    content
+                        .scaleEffect(isScanning && isAnimating ? 1.1 : 1.0)
+                        .animation(isScanning ? Animation.easeInOut(duration: 0.8).repeatForever(autoreverses: true) : .default, value: isAnimating)
+                }
+            }
+            .onAppear {
+                if isScanning || isCleaning {
+                    isAnimating = true
+                }
+            }
+            .onChange(of: isScanning) { newVal in isAnimating = newVal }
+            .onChange(of: isCleaning) { newVal in 
+                 if newVal { isAnimating = true }
+            }
+        }
+    }
+    
+    // MARK: - Animation Modifier (Deprecated, but kept for safe fallback if needed)
     struct ScanningAnimationModifier: ViewModifier {
         let isScanning: Bool
         @State private var isAnimating = false
@@ -1054,25 +1150,16 @@ struct SmartCleanerView: View {
         }
     }
     
-    // MARK: - Rotating Ring Component
-    struct RotatingCircleRing: View {
-        @State private var rotation: Double = 0
+    // MARK: - Spinning Animation Modifier
+    struct SpinningAnimationModifier: ViewModifier {
+        @State private var isSpinning = false
         
-        var body: some View {
-            Circle()
-                .trim(from: 0.2, to: 1)
-                .stroke(
-                    AngularGradient(
-                        gradient: Gradient(colors: [.white.opacity(0.8), .white.opacity(0.1)]),
-                        center: .center
-                    ),
-                    style: StrokeStyle(lineWidth: 3, lineCap: .round)
-                )
-                .rotationEffect(.degrees(rotation))
+        func body(content: Content) -> some View {
+            content
+                .rotationEffect(Angle(degrees: isSpinning ? 360 : 0))
+                .animation(Animation.linear(duration: 1.5).repeatForever(autoreverses: false), value: isSpinning)
                 .onAppear {
-                    withAnimation(.linear(duration: 1.5).repeatForever(autoreverses: false)) {
-                        rotation = 360
-                    }
+                    isSpinning = true
                 }
         }
     }
@@ -1090,83 +1177,151 @@ struct SmartCleanerView: View {
                 Task { await service.scanAll() }
             }) {
                 ZStack {
-                    // Outer Glow
-                    Circle()
-                        .fill(RadialGradient(
-                            colors: [Color.purple.opacity(0.4), .clear],
-                            center: .center,
-                            startRadius: 40,
-                            endRadius: 90
-                        ))
-                        .frame(width: 160, height: 160)
-                    
-                    // Main Orb
-                    Circle()
+                    // Bottom Floor Glow (The "Under" Effect)
+                    // Elliptical glow to simulate reflection/light on the surface below
+                    Ellipse()
                         .fill(
                             LinearGradient(
-                                colors: [Color(red: 0.8, green: 0.2, blue: 0.7), Color(red: 0.5, green: 0.1, blue: 0.6)],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
+                                colors: [
+                                    Color(red: 0.6, green: 0.2, blue: 0.8).opacity(0.6), // Bright Purple core
+                                    Color(red: 0.4, green: 0.1, blue: 0.6).opacity(0.2), // Fading out
+                                    .clear
+                                ],
+                                startPoint: .center,
+                                endPoint: .trailing
                             )
                         )
-                        .frame(width: 100, height: 100)
-                        .shadow(color: .purple.opacity(0.6), radius: 15, x: 0, y: 8)
-                        .overlay(
-                            // Glassy reflection
-                            Circle()
-                                .strokeBorder(
-                                    LinearGradient(
-                                        colors: [.white.opacity(0.7), .white.opacity(0.1)],
-                                        startPoint: .topLeading,
-                                        endPoint: .bottomTrailing
-                                    ),
-                                    lineWidth: 2
-                                )
-                        )
+                        .frame(width: 180, height: 40) // Flattened disk
+                        .blur(radius: 15)
+                        .offset(y: 65) // Positioned well below the button
                     
-                    Text(loc.currentLanguage == .chinese ? "开始" : "Start")
-                        .font(.system(size: 20, weight: .bold, design: .rounded))
-                        .foregroundColor(.white)
-                        .shadow(radius: 2)
+                    // Outer Ring (Pulsing or static faint ring)
+                    Circle()
+                        .stroke(
+                            LinearGradient(
+                                colors: [.white.opacity(0.3), .white.opacity(0.0)],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            ),
+                            lineWidth: 1
+                        )
+                        .frame(width: 128, height: 128)
+                    
+                    // Main Orb Body
+                    ZStack {
+                        // Background Gradient
+                        Circle()
+                            .fill(
+                                LinearGradient(
+                                    stops: [
+                                        .init(color: Color(red: 0.85, green: 0.3, blue: 0.7), location: 0), // Lighter Pink/Purple Top
+                                        .init(color: Color(red: 0.6, green: 0.1, blue: 0.6), location: 0.5), // Mid Purple
+                                        .init(color: Color(red: 0.4, green: 0.1, blue: 0.5), location: 1.0)  // Darker Bottom
+                                    ],
+                                    startPoint: .top,
+                                    endPoint: .bottom
+                                )
+                            )
+                            .shadow(color: Color.black.opacity(0.3), radius: 10, x: 0, y: 5)
+                        
+                        // Inner "Concave" Shadow (simulated with overlay gradient)
+                        Circle()
+                            .fill(
+                                LinearGradient(
+                                    colors: [.white.opacity(0.2), .clear],
+                                    startPoint: .top,
+                                    endPoint: .center
+                                )
+                            )
+                            .padding(2)
+                            .blur(radius: 2)
+                        
+                        // Text
+                        Text(loc.currentLanguage == .chinese ? "扫描" : "Scan")
+                            .font(.system(size: 22, weight: .semibold, design: .rounded))
+                            .foregroundColor(.white)
+                            .shadow(color: .black.opacity(0.2), radius: 2, x: 0, y: 1)
+                    }
+                    .frame(width: 100, height: 100)
+                    .overlay(
+                        // Sharp Glassy Rim
+                        Circle()
+                            .strokeBorder(
+                                LinearGradient(
+                                    colors: [.white.opacity(0.8), .white.opacity(0.1)],
+                                    startPoint: .top,
+                                    endPoint: .bottom
+                                ),
+                                lineWidth: 1.5
+                            )
+                    )
                 }
+                .contentShape(Rectangle()) // Expand hit area slightly if needed, or keep generic
             }
             .buttonStyle(.plain)
             
         case .scanning:
             // New Stop Button with Rotating Ring and Real-time Size
-            HStack(spacing: 20) {
+            // New Stop Button with Rotating Ring and Real-time Size
+            VStack(spacing: 20) {
                 // Stop Button Group
                 Button(action: { service.stopScanning() }) {
                     ZStack {
-                        // Background Circle
+                        // 1. Outer Progress Ring Track (Faint)
                         Circle()
-                            .fill(Color.white.opacity(0.15))
-                            .frame(width: 80, height: 80)
+                            .stroke(Color.white.opacity(0.1), lineWidth: 4)
+                            .frame(width: 84, height: 84)
                         
-                        // Rotating Progress Ring
-                        RotatingCircleRing()
-                            .frame(width: 80, height: 80)
-                        
-                        // Inner Button (Stop)
+                        // 2. Rotating Progress Indicator (Gradient Arc)
                         Circle()
-                            .fill(LinearGradient(
-                                colors: [Color.white.opacity(0.2), Color.white.opacity(0.1)],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            ))
-                            .frame(width: 64, height: 64)
+                            .trim(from: 0, to: 0.25) // A quarter circle arc
+                            .stroke(
+                                LinearGradient(
+                                    colors: [.white, .white.opacity(0)],
+                                    startPoint: .top,
+                                    endPoint: .trailing
+                                ),
+                                style: StrokeStyle(lineWidth: 4, lineCap: .round)
+                            )
+                            .frame(width: 84, height: 84)
+                            .rotationEffect(Angle(degrees: -90)) // Start from top
+                            .modifier(SpinningAnimationModifier()) // Continuous rotation
                         
-                        Text(loc.currentLanguage == .chinese ? "停止" : "Stop")
-                            .font(.system(size: 14, weight: .medium))
-                            .foregroundColor(.white)
+                        // 3. Inner Button Background (Glassy)
+                        Circle()
+                            .fill(
+                                LinearGradient(
+                                    colors: [
+                                        Color(red: 0.8, green: 0.2, blue: 0.5), // Pinkish Red
+                                        Color(red: 0.6, green: 0.1, blue: 0.4)  // Darker Purple/Red
+                                    ],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
+                            )
+                            .frame(width: 68, height: 68) // Slightly smaller than ring
+                            .shadow(color: Color.black.opacity(0.3), radius: 5, x: 0, y: 3)
+                            .overlay(
+                                Circle()
+                                    .stroke(Color.white.opacity(0.1), lineWidth: 1)
+                            )
+                            
+                        // 4. "Stop" Text or Icon
+                        VStack(spacing: 2) {
+                            // Can switch to a square icon if preferred, but text is clearer
+                            Text(loc.currentLanguage == .chinese ? "停止" : "Stop")
+                                .font(.system(size: 14, weight: .semibold))
+                                .foregroundColor(.white)
+                        }
                     }
                 }
                 .buttonStyle(.plain)
                 
-                // Real-time Size Display
+                // Real-time Size Display (Moved below the button for cleaner look)
                 Text(ByteCountFormatter.string(fromByteCount: totalScannedSize, countStyle: .file))
-                    .font(.system(size: 20, weight: .light))
-                    .foregroundColor(.white.opacity(0.9))
+                    .font(.system(size: 24, weight: .light)) // Larger, cleaner font
+                    .foregroundColor(.white)
+                    .shadow(color: Color.black.opacity(0.2), radius: 2, y: 1)
             }
             .padding(.bottom, 20)
                          

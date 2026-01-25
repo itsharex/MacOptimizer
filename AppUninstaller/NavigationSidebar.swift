@@ -185,23 +185,8 @@ struct NavigationSidebar: View {
             }
             .padding(.bottom, 16)
         }
-        .frame(width: 200)
-        .background(
-            // 轻量半透明背景，让全局背景透过
-            ZStack {
-                Color.black.opacity(0.15)  // 从0.3降低到0.15，更透明
-                
-                // 顶部轻微渐变高光
-                LinearGradient(
-                    stops: [
-                        .init(color: Color.white.opacity(0.04), location: 0),  // 从0.08降低到0.04
-                        .init(color: Color.clear, location: 0.3)
-                    ],
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
-            }
-        )
+        .frame(width: 220)
+        .background(Color.clear) // 透明背景，让 ContentView 中的全局背景透过来
     }
 }
 
@@ -241,24 +226,25 @@ struct SidebarMenuItem: View {
     
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 10) {
+            HStack(spacing: 12) {
                 // 图标
+                // 选中或悬停时显示彩色图标
                 if isSelected || isHovering {
                     Image(systemName: moduleIcon)
-                        .font(.system(size: 14, weight: .medium))
-                        .foregroundStyle(module.gradient)
-                        .frame(width: 20)
+                        .font(.system(size: 15, weight: .medium))
+                        .foregroundStyle(module.gradient) // 使用模块定义的渐变色
+                        .frame(width: 22)
                 } else {
                     Image(systemName: moduleIcon)
-                        .font(.system(size: 14, weight: .medium))
-                        .foregroundColor(.white.opacity(0.7))
-                        .frame(width: 20)
+                        .font(.system(size: 15, weight: .medium))
+                        .foregroundColor(.white.opacity(0.6)) // 未选中灰色
+                        .frame(width: 22)
                 }
                 
                 // 名称
                 Text(localizedName)
-                    .font(.system(size: 13, weight: isSelected ? .semibold : .regular))
-                    .foregroundColor(isSelected ? .white : .white.opacity(0.8))
+                    .font(.system(size: 13, weight: isSelected ? .medium : .regular))
+                    .foregroundColor(isSelected ? .white : .white.opacity(0.7))
                 
                 Spacer()
             }
@@ -267,30 +253,32 @@ struct SidebarMenuItem: View {
             .background(
                 Group {
                     if isSelected {
-                        // 选中状态 - 渐变背景 + 左侧高亮边框
+                        // 选中状态：更明显的玻璃质感背景，模仿“外围架构”的卡片感
                         ZStack {
-                            RoundedRectangle(cornerRadius: 8)
-                                .fill(
-                                    LinearGradient(
-                                        colors: [
-                                            Color.white.opacity(0.15),
-                                            Color.white.opacity(0.05)
-                                        ],
-                                        startPoint: .leading,
-                                        endPoint: .trailing
-                                    )
+                            RoundedRectangle(cornerRadius: 10)
+                                .fill(Color.black.opacity(0.2)) // 深色底加强对比
+                                
+                            RoundedRectangle(cornerRadius: 10)
+                                .fill(LinearGradient(
+                                    colors: [
+                                        Color.white.opacity(0.1),
+                                        Color.white.opacity(0.02)
+                                    ],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                ))
+                                .shadow(color: Color.black.opacity(0.1), radius: 2, y: 1)
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 10)
+                                        .stroke(LinearGradient(
+                                            colors: [.white.opacity(0.15), .clear],
+                                            startPoint: .top,
+                                            endPoint: .bottom
+                                        ), lineWidth: 0.5)
                                 )
-                            
-                            // 左侧高亮边框
-                            HStack {
-                                RoundedRectangle(cornerRadius: 2)
-                                    .fill(module.gradient)
-                                    .frame(width: 3)
-                                Spacer()
-                            }
                         }
                     } else if isHovering {
-                        RoundedRectangle(cornerRadius: 8)
+                        RoundedRectangle(cornerRadius: 10)
                             .fill(Color.white.opacity(0.05))
                     } else {
                         Color.clear
@@ -300,9 +288,11 @@ struct SidebarMenuItem: View {
         }
         .buttonStyle(.plain)
         .onHover { hovering in
-            withAnimation(.easeInOut(duration: 0.12)) {
+            withAnimation(.easeInOut(duration: 0.15)) {
                 isHovering = hovering
             }
         }
     }
 }
+
+
