@@ -122,7 +122,7 @@ struct SmartCleanerView: View {
             VStack {
                 Spacer()
                 mainActionButton
-                    .padding(.bottom, 30) // Raise button to be fully visible
+                    .padding(.bottom, 40) // Standardized padding
             }
             
             if showRunningAppsDialog {

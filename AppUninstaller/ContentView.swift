@@ -20,9 +20,12 @@ struct ContentView: View {
             selectedModule.backgroundGradient
                 .ignoresSafeArea()
             
-            HStack(spacing: 0) {
-                // 左侧导航
+            HStack(spacing: 16) {
+                // 左侧导航 (Floating Glass Card)
                 NavigationSidebar(selectedModule: $selectedModule)
+                    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16))
+                    .padding(.leading, 16)
+                    .padding(.vertical, 16)
                     .zIndex(1)
                 
                 // 右侧内容
@@ -81,6 +84,9 @@ struct ContentView: View {
                     .animation(.easeInOut(duration: 0.3), value: selectedModule)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16)) // Glass Card Background
+                .padding(.trailing, 16)
+                .padding(.vertical, 16)
             }
         }
     }

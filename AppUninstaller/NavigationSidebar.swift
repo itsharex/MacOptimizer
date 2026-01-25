@@ -186,7 +186,7 @@ struct NavigationSidebar: View {
             .padding(.bottom, 16)
         }
         .frame(width: 220)
-        .background(Color.clear) // 透明背景，让 ContentView 中的全局背景透过来
+
     }
 }
 

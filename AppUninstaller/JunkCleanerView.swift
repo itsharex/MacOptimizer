@@ -82,11 +82,21 @@ struct JunkCleanerView: View {
                     summaryPage
                 }
             case .cleaning:
-                cleaningPage
+                cleaningPage.padding(.bottom, 100)
             case .finished:
                 finishedPage
             }
         }
+        .overlay(
+            // Fixed Bottom Action Button Overlay
+            VStack {
+                Spacer()
+                if scanState != .cleaning {
+                    mainActionButton
+                        .padding(.bottom, 40)
+                }
+            }
+        )
         .alert(loc.currentLanguage == .chinese ? "部分文件需要管理员权限" : "Some Files Require Admin Privileges", isPresented: $showRetryWithAdmin) {
             Button(loc.currentLanguage == .chinese ? "使用管理员权限删除" : "Delete with Admin", role: .destructive) {
                  showCleaningFinished = true
@@ -106,6 +116,156 @@ struct JunkCleanerView: View {
                 playScanCompleteSound()
             }
             wasScanning = isScanning
+        }
+    }
+    
+    // MARK: - Main Action Button (Unified)
+    @ViewBuilder
+    private var mainActionButton: some View {
+        switch scanState {
+        case .initial:
+            Button(action: { startScan() }) {
+                ZStack {
+                    // 1. Soft Glow
+                    Circle()
+                        .fill(Color(hex: "5E5CE6").opacity(0.4))
+                        .frame(width: 50, height: 50)
+                        .blur(radius: 10)
+                    
+                    // 2. Main Button
+                    Circle()
+                        .fill(LinearGradient(colors: [Color(hex: "7D7AFF"), Color(hex: "5E5CE6")], startPoint: .topLeading, endPoint: .bottomTrailing))
+                        .frame(width: 50, height: 50)
+                        .shadow(color: .black.opacity(0.2), radius: 5, y: 2)
+                    
+                    // 3. Border
+                    Circle()
+                        .stroke(LinearGradient(colors: [.white.opacity(0.6), .white.opacity(0.1)], startPoint: .top, endPoint: .bottom), lineWidth: 1)
+                        .frame(width: 50, height: 50)
+                    
+                    Text(loc.currentLanguage == .chinese ? "扫描" : "Scan")
+                        .font(.system(size: 13, weight: .medium, design: .rounded))
+                        .foregroundColor(.white)
+                }
+                .frame(width: 60, height: 60)
+                .background(
+                     Circle()
+                        .stroke(LinearGradient(colors: [.white.opacity(0.3), .white.opacity(0.05)], startPoint: .top, endPoint: .bottom), lineWidth: 2)
+                        .background(Circle().fill(Color.white.opacity(0.05)))
+                )
+            }
+            .buttonStyle(.plain)
+            
+        case .scanning:
+            HStack(spacing: 20) {
+                 Button(action: { cleaner.stopScanning() }) {
+                    ZStack {
+                        // Progress/Ring Background
+                        Circle()
+                            .stroke(Color.white.opacity(0.1), lineWidth: 3)
+                            .frame(width: 60, height: 60)
+                        
+                        // Progress Ring (Determinate)
+                        Circle()
+                            .trim(from: 0, to: max(0.01, cleaner.scanProgress))
+                            .stroke(
+                                AngularGradient(gradient: Gradient(colors: [.white.opacity(0.8), .white.opacity(0.1)]), center: .center),
+                                style: StrokeStyle(lineWidth: 3, lineCap: .round)
+                            )
+                            .frame(width: 60, height: 60)
+                            .rotationEffect(Angle(degrees: -90))
+                            .animation(.linear(duration: 0.2), value: cleaner.scanProgress)
+                        
+                        // Inner Button
+                        Circle()
+                            .fill(LinearGradient(colors: [Color.white.opacity(0.2), Color.white.opacity(0.1)], startPoint: .top, endPoint: .bottom))
+                            .frame(width: 48, height: 48)
+                        
+                        Text(loc.currentLanguage == .chinese ? "停止" : "Stop")
+                            .font(.system(size: 11))
+                            .foregroundColor(.white)
+                    }
+                }
+                .buttonStyle(.plain)
+                
+                // Real-time Size
+                Text(ByteCountFormatter.string(fromByteCount: cleaner.totalSize, countStyle: .file))
+                    .font(.system(size: 24, weight: .light))
+                    .foregroundColor(.white)
+                    .shadow(color: Color.black.opacity(0.2), radius: 2, y: 1)
+            }
+            
+        case .completed:
+            // Summary or Detail or Finished
+            if showCleaningFinished {
+                // Finished State - "Review Remaining"
+                 Button(action: { 
+                    showCleaningFinished = false
+                    showingDetails = true
+                }) {
+                    Text(loc.currentLanguage == .chinese ? "查看剩余" : "Review") // Shortened
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundColor(.white)
+                        .frame(width: 60, height: 60)
+                        .background(Circle().fill(Color.white.opacity(0.2)))
+                        .overlay(Circle().stroke(Color.white.opacity(0.3), lineWidth: 1))
+                }
+                .buttonStyle(.plain)
+            } else {
+                // Summary or Detail - Clean Button
+                HStack(spacing: 16) {
+                     Button(action: { startCleaning() }) {
+                         ZStack {
+                             // Glow
+                             Circle()
+                                 .fill(Color(hex: "7D7AFF").opacity(0.4))
+                                 .frame(width: 50, height: 50)
+                                 .blur(radius: 10)
+                             
+                             // Fill
+                             Circle()
+                                 .fill(LinearGradient(colors: [Color(hex: "7D7AFF"), Color(hex: "5E5CE6")], startPoint: .topLeading, endPoint: .bottomTrailing))
+                                 .frame(width: 50, height: 50)
+                                 .shadow(color: .black.opacity(0.2), radius: 5, y: 2)
+                             
+                             // Border
+                             Circle()
+                                 .stroke(LinearGradient(colors: [.white.opacity(0.8), .white.opacity(0.2)], startPoint: .top, endPoint: .bottom), lineWidth: 1)
+                                 .frame(width: 50, height: 50)
+                             
+                             Text(loc.currentLanguage == .chinese ? "清理" : "Clean")
+                                 .font(.system(size: 12, weight: .semibold, design: .rounded))
+                                 .foregroundColor(.white)
+                         }
+                         .frame(width: 60, height: 60)
+                     }
+                     .buttonStyle(.plain)
+                     
+                     // Size Text (Only if details shown or needed)
+                     if showingDetails {
+                          Text(ByteCountFormatter.string(fromByteCount: cleaner.selectedSize, countStyle: .file))
+                              .font(.system(size: 18, weight: .medium))
+                              .foregroundColor(.white)
+                     }
+                }
+            }
+            
+        case .finished:
+             Button(action: { 
+                showCleaningFinished = false
+                showingDetails = true
+            }) {
+                Text(loc.currentLanguage == .chinese ? "查看剩余" : "Review")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundColor(.white)
+                    .frame(width: 60, height: 60)
+                    .background(Circle().fill(Color.white.opacity(0.2)))
+                    .overlay(Circle().stroke(Color.white.opacity(0.3), lineWidth: 1))
+            }
+            .buttonStyle(.plain)
+            
+        default:
+            EmptyView()
         }
     }
     
@@ -194,26 +354,7 @@ struct JunkCleanerView: View {
             
             Spacer()
             
-            // Scan Button (Bottom Center)
-            ZStack {
-                Circle()
-                    .stroke(LinearGradient(colors: [.white.opacity(0.5), .blue.opacity(0.5)], startPoint: .top, endPoint: .bottom), lineWidth: 2)
-                    .frame(width: 60, height: 60)
-                    .shadow(color: .blue.opacity(0.5), radius: 5)
-                
-                 Button(action: { startScan() }) {
-                    ZStack {
-                        Circle()
-                            .fill(LinearGradient(colors: [Color(hex: "7D7AFF"), Color(hex: "5E5CE6")], startPoint: .topLeading, endPoint: .bottomTrailing))
-                            .frame(width: 50, height: 50)
-                        
-                        Text(loc.currentLanguage == .chinese ? "扫描" : "Scan")
-                            .font(.system(size: 13, weight: .medium))
-                            .foregroundColor(.white)
-                    }
-                }
-                .buttonStyle(.plain)
-            }
+            Spacer()
              .padding(.bottom, 60)
         }
     }
@@ -264,45 +405,7 @@ struct JunkCleanerView: View {
             
             Spacer()
             
-            // Stop Button with Ring & Size (Standardized)
-            HStack(spacing: 20) {
-                 Button(action: { cleaner.stopScanning() }) {
-                    ZStack {
-                        // Progress/Ring Background
-                        Circle()
-                            .stroke(Color.white.opacity(0.1), lineWidth: 3)
-                            .frame(width: 60, height: 60)
-                        
-                        // Progress Ring (Determinate)
-                        Circle()
-                            .trim(from: 0, to: max(0.01, cleaner.scanProgress))
-                            .stroke(
-                                AngularGradient(gradient: Gradient(colors: [.white.opacity(0.8), .white.opacity(0.1)]), center: .center),
-                                style: StrokeStyle(lineWidth: 3, lineCap: .round)
-                            )
-                            .frame(width: 60, height: 60)
-                            .rotationEffect(Angle(degrees: -90))
-                            .animation(.linear(duration: 0.2), value: cleaner.scanProgress)
-                        
-                        // Inner Button
-                        Circle()
-                            .fill(LinearGradient(colors: [Color.white.opacity(0.2), Color.white.opacity(0.1)], startPoint: .top, endPoint: .bottom))
-                            .frame(width: 48, height: 48)
-                        
-                        Text(loc.currentLanguage == .chinese ? "停止" : "Stop")
-                            .font(.system(size: 11))
-                            .foregroundColor(.white)
-                    }
-                }
-                .buttonStyle(.plain)
-                
-                // Real-time Size
-                Text(ByteCountFormatter.string(fromByteCount: cleaner.totalSize, countStyle: .file))
-                    .font(.system(size: 24, weight: .light))
-                    .foregroundColor(.white)
-                    .shadow(color: Color.black.opacity(0.2), radius: 2, y: 1)
-            }
-            .padding(.bottom, 20)
+            Spacer()
 
         }
         .onAppear { isAnimating = true }
@@ -413,29 +516,7 @@ struct JunkCleanerView: View {
             
             Spacer()
             
-            // Clean Button
-            Button(action: { startCleaning() }) {
-                ZStack {
-                    Circle()
-                        .fill(RadialGradient(colors: [Color.white.opacity(0.2), .clear], center: .center, startRadius: 40, endRadius: 70))
-                        .frame(width: 70, height: 70)
-                    
-                    Circle()
-                        .stroke(LinearGradient(colors: [.white.opacity(0.5), .blue.opacity(0.5)], startPoint: .top, endPoint: .bottom), lineWidth: 2)
-                        .frame(width: 60, height: 60)
-
-                    Circle()
-                        .fill(LinearGradient(colors: [Color(hex: "7D7AFF").opacity(0.8), Color(hex: "5E5CE6").opacity(0.8)], startPoint: .topLeading, endPoint: .bottomTrailing))
-                        .frame(width: 50, height: 50)
-                        .shadow(radius: 5)
-                    
-                    Text(loc.currentLanguage == .chinese ? "清理" : "Clean")
-                        .font(.system(size: 13, weight: .medium))
-                        .foregroundColor(.white)
-                }
-            }
-            .buttonStyle(.plain)
-            .padding(.bottom, 60)
+            Spacer()
         }
     }
     
@@ -495,50 +576,7 @@ struct JunkCleanerView: View {
                 JunkDetailContentView(selectedCategory: selectedCategory, cleaner: cleaner)
             }
             
-            // Bottom Clean Button Overlay
-            // Bottom Clean Button Overlay
-             ZStack {
-                // Gradient Background
-                LinearGradient(colors: [Color(hex: "4A4385").opacity(0.01), Color(hex: "4A4385").opacity(1.0)], startPoint: .top, endPoint: .bottom)
-                    .frame(height: 100)
-                
-                 HStack(spacing: 16) {
-                     // Clean Button - Glowing Gradient Circle
-                     Button(action: { startCleaning() }) {
-                         ZStack {
-                             // Glow
-                             Circle()
-                                 .fill(Color(hex: "7D7AFF").opacity(0.4))
-                                 .frame(width: 60, height: 60)
-                                 .blur(radius: 10)
-                             
-                             // Border
-                             Circle()
-                                 .stroke(LinearGradient(colors: [.white.opacity(0.8), .white.opacity(0.2)], startPoint: .top, endPoint: .bottom), lineWidth: 2)
-                                 .frame(width: 56, height: 56)
-                             
-                             // Fill
-                             Circle()
-                                 .fill(LinearGradient(colors: [Color(hex: "7D7AFF"), Color(hex: "5E5CE6")], startPoint: .topLeading, endPoint: .bottomTrailing))
-                                 .frame(width: 50, height: 50)
-                             
-                             Text(loc.currentLanguage == .chinese ? "清理" : "Clean")
-                                 .font(.system(size: 12, weight: .semibold))
-                                 .foregroundColor(.white)
-                         }
-                     }
-                     .buttonStyle(.plain)
-                     .padding(.bottom, 10)
-                     
-                     // Total Size Text
-                     Text(ByteCountFormatter.string(fromByteCount: cleaner.selectedSize, countStyle: .file))
-                         .font(.system(size: 18, weight: .medium))
-                         .foregroundColor(.white)
-                         .padding(.bottom, 10)
-                 }
-            }
-            .frame(height: 100)
-            .frame(height: 80)
+            // Bottom Clean Button Overlay (Removed)
         }
         .onAppear {
             if selectedCategory == nil, let first = cleaner.junkItems.first {
@@ -755,42 +793,8 @@ struct JunkCleanerView: View {
                         }
                         .padding(.top, 8)
                         
-                        // 操作按钮
-                        HStack(spacing: 16) {
-                            Button(action: { 
-                                // 跳转到详情页查看剩余项目，而不是重置
-                                showCleaningFinished = false
-                                showingDetails = true
-                            }) {
-                                Text(loc.currentLanguage == .chinese ? "查看剩余项目" : "Review Remaining")
-                                    .font(.system(size: 14, weight: .medium))
-                                    .foregroundColor(.white)
-                                    .padding(.horizontal, 20)
-                                    .padding(.vertical, 10)
-                                    .background(Color.white.opacity(0.15))
-                                    .cornerRadius(8)
-                            }
-                            .buttonStyle(.plain)
-                            
-                            Button(action: {
-                                // 分享成果功能（可选）
-                            }) {
-                                HStack(spacing: 6) {
-                                    Image(systemName: "square.and.arrow.up")
-                                    Text(loc.currentLanguage == .chinese ? "分享成果" : "Share Result")
-                                }
-                                .font(.system(size: 14, weight: .medium))
-                                .foregroundColor(.white.opacity(0.8))
-                                .padding(.horizontal, 20)
-                                .padding(.vertical, 10)
-                                .background(Color.white.opacity(0.08))
-                                .cornerRadius(8)
-                            }
-                            .buttonStyle(.plain)
                         }
-                        .padding(.top, 16)
                     }
-                }
                 .padding(.horizontal, 40)
                 
                 Spacer()
