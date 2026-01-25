@@ -97,6 +97,11 @@ class DeepCleanScanner: ObservableObject {
         items.filter { $0.isSelected }.count
     }
     
+    // Progress smoothing
+    private var currentTaskProgressRange: (start: Double, end: Double) = (0, 0)
+    private var scannedItemsCount: Int = 0
+    private let progressSmoothingFactor: Double = 1000.0 // Items to reach 50% of range
+    
     private let fileManager = FileManager.default
     private var scanTask: Task<Void, Never>?
     
@@ -131,6 +136,13 @@ class DeepCleanScanner: ObservableObject {
             await MainActor.run {
                 self.currentCategory = category
                 self.scanStatus = self.statusText(for: category)
+                
+                // Define range for this task
+                let start = Double(index) / totalCategories
+                let end = Double(index + 1) / totalCategories
+                self.currentTaskProgressRange = (start, end)
+                self.scannedItemsCount = 0
+                self.scanProgress = start
             }
             
             // Perform Scan
@@ -150,7 +162,7 @@ class DeepCleanScanner: ObservableObject {
                 self.completedCategories.insert(category)
                 self.items.sort { $0.size > $1.size } // Keep sorted
                 
-                // Animate Progress
+                // Animate Progress (Complete this step)
                 withAnimation(.linear(duration: 0.3)) {
                     self.scanProgress = Double(index + 1) / totalCategories
                 }
@@ -188,6 +200,17 @@ class DeepCleanScanner: ObservableObject {
         
         Task { @MainActor in
             self.currentScanningUrl = url
+            
+            // Asymptotic Progress Update
+            self.scannedItemsCount += 1
+            let progressWithinRange = 1.0 - (1.0 / (1.0 + Double(self.scannedItemsCount) / self.progressSmoothingFactor))
+            let (start, end) = self.currentTaskProgressRange
+            let newProgress = start + (end - start) * progressWithinRange
+            
+            // Only update if greater (monotonically increasing)
+            if newProgress > self.scanProgress {
+                self.scanProgress = newProgress
+            }
         }
     }
     
@@ -350,6 +373,8 @@ class DeepCleanScanner: ObservableObject {
         
         let results = await scanDirectoryConcurrently(directories: scanRoots, configuration: config) { url, values -> DeepCleanItem? in
             // SAFETY: Skip .app bundles and application-related files
+            self.updateScanningUrl(url.path) // Trigger progress update
+            
             if url.path.contains(".app") || 
                url.path.contains("/Applications/") ||
                url.path.contains("/Library/") { // Double check for Library in path

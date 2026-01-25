@@ -317,6 +317,23 @@ class SmartCleanerService: ObservableObject {
     @Published var currentScanPath: String = ""
     @Published var currentCategory: CleanerCategory = .systemJunk
     
+    // Global progress range for sub-scans
+    private var progressRange: (start: Double, end: Double) = (0.0, 1.0)
+    
+    // Helper to update progress based on current range (Must be called on MainActor)
+    private func setProgress(_ localProgress: Double) {
+        let range = progressRange.end - progressRange.start
+        let val = progressRange.start + (localProgress * range)
+        // Ensure strictly increasing (optional, but good for UX)
+        if val > self.scanProgress {
+            self.scanProgress = val
+        } else if localProgress == 0 {
+             // Allow backward jump only if localProgress is 0 (start of new phase)
+             // But actually we usually want to start at the range start.
+             self.scanProgress = progressRange.start
+        }
+    }
+    
     // 停止扫描标志
     private var shouldStopScanning = false
     
@@ -813,7 +830,10 @@ class SmartCleanerService: ObservableObject {
     func scanSystemJunk() async {
         await MainActor.run {
             isScanning = true
-            scanProgress = 0
+            // Remove unconditional reset to 0
+            if progressRange == (0.0, 1.0) {
+                 setProgress(0)
+            }
             currentCategory = .systemJunk
             systemCacheFiles = []
             oldUpdateFiles = []
@@ -879,7 +899,7 @@ class SmartCleanerService: ObservableObject {
     
     private func updateProgress(step: Double, total: Double, message: String) async {
         await MainActor.run {
-            scanProgress = step / total
+            setProgress(step / total)
             currentScanPath = message
         }
     }
@@ -904,7 +924,8 @@ class SmartCleanerService: ObservableObject {
                             self.currentScanPath = itemURL.path
                         }
                         let size = calculateSize(at: itemURL)
-                        if size > 1024 { // > 1KB，大幅降低阈值
+                        // 优化：取消大小限制，确保扫描所有缓存
+                        if size > 0 { 
                             items.append(CleanerFileItem(
                                 url: itemURL,
                                 name: "系统: " + itemURL.lastPathComponent,
@@ -1267,20 +1288,15 @@ class SmartCleanerService: ObservableObject {
         }
         
         // 1. 扫描整个 ~/Library/Caches 目录
-        // ⚠️ 安全改进：不再扫描应用相关缓存，只扫描明确的系统缓存
+        // ⚠️ 扫描 Library/Caches 下的所有缓存
         let cacheURL = home.appendingPathComponent("Library/Caches")
         if let contents = try? fileManager.contentsOfDirectory(at: cacheURL, includingPropertiesForKeys: nil) {
             for itemURL in contents {
                 let size = calculateSize(at: itemURL)
-                if size > 50 * 1024 {
+                // 优化：取消大小限制，确保扫描所有缓存
+                if size > 0 {
                     let bundleId = itemURL.lastPathComponent
-                    // ⚠️ 跳过应用相关缓存，只处理系统级缓存
-                    // 检查是否为已安装应用的缓存，如果是则跳过
-                    // if !bundleId.hasPrefix("com.apple.") && installedAppBundleIds.contains(bundleId.lowercased()) {
-                    //    continue  // 跳过已安装应用的缓存
-                    // }
                     
-                    // 只保留系统缓存和明确的临时文件
                     let displayName = formatAppName(bundleId)
                     
                     let fileItem = CleanerFileItem(
@@ -1917,7 +1933,7 @@ class SmartCleanerService: ObservableObject {
     func scanDuplicates() async {
         await MainActor.run {
             isScanning = true
-            scanProgress = 0
+            setProgress(0)
             duplicateGroups = []
             currentCategory = .duplicates
         }
@@ -1954,7 +1970,7 @@ class SmartCleanerService: ObservableObject {
         let filesToHash = potentialDuplicates.flatMap { $0.value }
         
         await MainActor.run {
-            scanProgress = 0.3 // 完成扫描阶段
+            setProgress(0.3)
             currentScanPath = "正在计算文件哈希..."
         }
         
@@ -1999,7 +2015,7 @@ class SmartCleanerService: ObservableObject {
                 
                 let progress = await progressTracker.getProgress()
                 await MainActor.run {
-                    self.scanProgress = 0.3 + progress * 0.7 // 哈希占 70% 进度
+                    self.setProgress(0.3 + progress * 0.7)
                 }
             }
         }
@@ -2021,7 +2037,7 @@ class SmartCleanerService: ObservableObject {
         
         await MainActor.run {
             duplicateGroups = groups
-            scanProgress = 1.0
+            setProgress(1.0)
             currentScanPath = ""
         }
     }
@@ -2054,7 +2070,7 @@ class SmartCleanerService: ObservableObject {
     func scanSimilarPhotos() async {
         await MainActor.run {
             isScanning = true
-            scanProgress = 0
+            setProgress(0)
             similarPhotoGroups = []
             currentCategory = .similarPhotos
         }
@@ -2082,7 +2098,7 @@ class SmartCleanerService: ObservableObject {
                 
                 processedCount += 1
                 await MainActor.run { [processedCount, totalCount] in
-                    scanProgress = Double(processedCount) / Double(max(totalCount, 1))
+                    setProgress(Double(processedCount) / Double(max(totalCount, 1)))
                     currentScanPath = fileURL.path
                 }
                 
@@ -2139,7 +2155,7 @@ class SmartCleanerService: ObservableObject {
         
         await MainActor.run {
             similarPhotoGroups = groups
-            scanProgress = 1.0
+            setProgress(1.0)
             currentScanPath = ""
         }
     }
@@ -2227,7 +2243,7 @@ class SmartCleanerService: ObservableObject {
     func scanLargeFiles(minSize: Int64 = 100 * 1024 * 1024) async { // 默认 100MB
         await MainActor.run {
             isScanning = true
-            scanProgress = 0
+            setProgress(0)
             largeFiles = []
             currentCategory = .largeFiles
         }
@@ -2291,7 +2307,7 @@ class SmartCleanerService: ObservableObject {
                 
                 let progress = await progressTracker.getProgress()
                 await MainActor.run {
-                    self.scanProgress = progress
+                    self.setProgress(progress)
                 }
             }
         }
@@ -2346,6 +2362,7 @@ class SmartCleanerService: ObservableObject {
         await MainActor.run {
             currentCategory = .performanceApps
             currentScanPath = "Preparing performance scan..."
+            // scanProgress = 0 // Removed to respect range
         }
         
         // 1. 获取所有进程内存使用情况 (Map: PID -> MemoryBytes)
@@ -2586,31 +2603,53 @@ class SmartCleanerService: ObservableObject {
         }
         
         // --- 1. 系统垃圾 (仅缓存和日志) ---
-        await MainActor.run { currentCategory = .systemJunk; currentScanPath = "Scanning for system junk..." }
+        await MainActor.run { 
+            currentCategory = .systemJunk
+            currentScanPath = "Scanning for system junk..."
+            progressRange = (0.0, 0.125)
+        }
         await scanSystemJunk()
+        
         await MainActor.run { _ = scannedCategories.insert(.systemJunk); scanProgress = 0.125 }
         if shouldStopScanning { return }
         
         // --- 2. 重复文件 ---
-        await MainActor.run { currentCategory = .duplicates; currentScanPath = "Searching for duplicates..." }
+        await MainActor.run { 
+            currentCategory = .duplicates
+            currentScanPath = "Searching for duplicates..."
+            progressRange = (0.125, 0.25)
+        }
         await scanDuplicates()
         await MainActor.run { _ = scannedCategories.insert(.duplicates); scanProgress = 0.25 }
         if shouldStopScanning { return }
         
         // --- 3. 相似照片 ---
-        await MainActor.run { currentCategory = .similarPhotos; currentScanPath = "Finding similar photos..." }
+        await MainActor.run { 
+            currentCategory = .similarPhotos
+            currentScanPath = "Finding similar photos..."
+            progressRange = (0.25, 0.375)
+        }
         await scanSimilarPhotos()
         await MainActor.run { _ = scannedCategories.insert(.similarPhotos); scanProgress = 0.375 }
         if shouldStopScanning { return }
         
         // --- 4. 大文件 ---
-        await MainActor.run { currentCategory = .largeFiles; currentScanPath = "Scanning for large files..." }
+        await MainActor.run { 
+            currentCategory = .largeFiles
+            currentScanPath = "Scanning for large files..."
+            progressRange = (0.375, 0.5)
+        }
         await scanLargeFiles()
         await MainActor.run { _ = scannedCategories.insert(.largeFiles); scanProgress = 0.5 }
         if shouldStopScanning { return }
         
         // --- 5. 病毒扫描 ---
-        await MainActor.run { currentCategory = .virus; currentScanPath = "Scanning for threats..." }
+        await MainActor.run { 
+            currentCategory = .virus
+            currentScanPath = "Scanning for threats..."
+            progressRange = (0.5, 0.625)
+            // Malware scanner doesn't report progress yet, so it bars 0.5-0.625
+        }
         await malwareScanner.scan()
         await MainActor.run { 
             self.virusThreats = self.malwareScanner.threats
@@ -2620,7 +2659,11 @@ class SmartCleanerService: ObservableObject {
         if shouldStopScanning { return }
         
         // --- 6. 启动项扫描 ---
-        await MainActor.run { currentCategory = .startupItems; currentScanPath = "Scanning startup items..." }
+        await MainActor.run { 
+            currentCategory = .startupItems
+            currentScanPath = "Scanning startup items..."
+            progressRange = (0.625, 0.75)
+        }
         await systemOptimizer.scanLaunchAgents()
         await MainActor.run { 
             self.startupItems = self.systemOptimizer.launchAgents.filter { $0.isEnabled }
@@ -2630,6 +2673,10 @@ class SmartCleanerService: ObservableObject {
         if shouldStopScanning { return }
         
         // --- 7. 性能优化 (查找高内存应用) ---
+        await MainActor.run { 
+             currentCategory = .performanceApps 
+             progressRange = (0.75, 0.875)
+        }
         await scanPerformanceApps()
         await MainActor.run {
             _ = scannedCategories.insert(.performanceApps)
@@ -2638,12 +2685,17 @@ class SmartCleanerService: ObservableObject {
         if shouldStopScanning { return }
         
         // --- 8. 应用更新检查 ---
-        await MainActor.run { currentCategory = .appUpdates; currentScanPath = "Checking for updates..." }
+        await MainActor.run { 
+            currentCategory = .appUpdates
+            currentScanPath = "Checking for updates..."
+            progressRange = (0.875, 1.0)
+        }
         await updateChecker.checkForUpdates()
         await MainActor.run { 
             self.hasAppUpdates = self.updateChecker.hasUpdate
             _ = scannedCategories.insert(.appUpdates)
-            scanProgress = 1.0
+            scanProgress = 1.0 // Ensure finish
+            progressRange = (0.0, 1.0) // Reset range
         }
         if shouldStopScanning { return }
 

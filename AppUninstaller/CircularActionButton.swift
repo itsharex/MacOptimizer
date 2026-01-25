@@ -21,13 +21,13 @@ struct CircularActionButton: View {
                 // Progress Ring
                 if showProgress {
                     Circle()
-                        .stroke(Color.white.opacity(0.1), lineWidth: 4)
-                        .frame(width: 90, height: 90)
+                        .stroke(Color.white.opacity(0.1), lineWidth: 3)
+                        .frame(width: 70, height: 70)
                     
                     Circle()
                         .trim(from: 0, to: CGFloat(progress ?? 0))
-                        .stroke(Color(hex: "E0B0FF"), style: StrokeStyle(lineWidth: 6, lineCap: .round))
-                        .frame(width: 90, height: 90)
+                        .stroke(Color(hex: "E0B0FF"), style: StrokeStyle(lineWidth: 4, lineCap: .round))
+                        .frame(width: 70, height: 70)
                         .rotationEffect(.degrees(-90))
                         .animation(.linear(duration: 0.5), value: progress)
                 }
@@ -44,10 +44,10 @@ struct CircularActionButton: View {
                             )
                         
                         Text(title)
-                            .font(.system(size: 18, weight: .medium))
+                            .font(.system(size: 14, weight: .medium))
                             .foregroundColor(.white)
                     }
-                    .frame(width: 80, height: 80)
+                    .frame(width: 60, height: 60)
                 }
                 .buttonStyle(.plain)
                 .shadow(color: Color.black.opacity(0.3), radius: 10, x: 0, y: 5)

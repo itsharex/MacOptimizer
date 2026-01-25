@@ -196,20 +196,19 @@ struct JunkCleanerView: View {
             
             // Scan Button (Bottom Center)
             ZStack {
-                // Outer Glow Ring
                 Circle()
                     .stroke(LinearGradient(colors: [.white.opacity(0.5), .blue.opacity(0.5)], startPoint: .top, endPoint: .bottom), lineWidth: 2)
-                    .frame(width: 84, height: 84)
+                    .frame(width: 60, height: 60)
                     .shadow(color: .blue.opacity(0.5), radius: 5)
                 
                  Button(action: { startScan() }) {
                     ZStack {
                         Circle()
                             .fill(LinearGradient(colors: [Color(hex: "7D7AFF"), Color(hex: "5E5CE6")], startPoint: .topLeading, endPoint: .bottomTrailing))
-                            .frame(width: 72, height: 72)
+                            .frame(width: 50, height: 50)
                         
                         Text(loc.currentLanguage == .chinese ? "扫描" : "Scan")
-                            .font(.system(size: 16, weight: .medium))
+                            .font(.system(size: 13, weight: .medium))
                             .foregroundColor(.white)
                     }
                 }
@@ -265,33 +264,33 @@ struct JunkCleanerView: View {
             
             Spacer()
             
-            // Stop Button with Ring & Size
+            // Stop Button with Ring & Size (Standardized)
             HStack(spacing: 20) {
                  Button(action: { cleaner.stopScanning() }) {
                     ZStack {
                         // Progress/Ring Background
                         Circle()
-                            .fill(Color.white.opacity(0.15))
-                            .frame(width: 80, height: 80)
+                            .stroke(Color.white.opacity(0.1), lineWidth: 3)
+                            .frame(width: 60, height: 60)
                         
-                        // Progress Ring
+                        // Progress Ring (Determinate)
                         Circle()
-                            .trim(from: 0, to: 0.75) // Static decoration or animated
+                            .trim(from: 0, to: max(0.01, cleaner.scanProgress))
                             .stroke(
                                 AngularGradient(gradient: Gradient(colors: [.white.opacity(0.8), .white.opacity(0.1)]), center: .center),
                                 style: StrokeStyle(lineWidth: 3, lineCap: .round)
                             )
-                            .frame(width: 80, height: 80)
-                            .rotationEffect(.degrees(isAnimating ? 360 : 0))
-                            .animation(Animation.linear(duration: 1).repeatForever(autoreverses: false), value: isAnimating)
+                            .frame(width: 60, height: 60)
+                            .rotationEffect(Angle(degrees: -90))
+                            .animation(.linear(duration: 0.2), value: cleaner.scanProgress)
                         
                         // Inner Button
                         Circle()
                             .fill(LinearGradient(colors: [Color.white.opacity(0.2), Color.white.opacity(0.1)], startPoint: .top, endPoint: .bottom))
-                            .frame(width: 64, height: 64)
+                            .frame(width: 48, height: 48)
                         
                         Text(loc.currentLanguage == .chinese ? "停止" : "Stop")
-                            .font(.system(size: 14))
+                            .font(.system(size: 11))
                             .foregroundColor(.white)
                     }
                 }
@@ -300,9 +299,11 @@ struct JunkCleanerView: View {
                 // Real-time Size
                 Text(ByteCountFormatter.string(fromByteCount: cleaner.totalSize, countStyle: .file))
                     .font(.system(size: 24, weight: .light))
-                    .foregroundColor(.white.opacity(0.9))
+                    .foregroundColor(.white)
+                    .shadow(color: Color.black.opacity(0.2), radius: 2, y: 1)
             }
-            .padding(.bottom, 60)
+            .padding(.bottom, 20)
+
         }
         .onAppear { isAnimating = true }
     }
@@ -416,20 +417,20 @@ struct JunkCleanerView: View {
             Button(action: { startCleaning() }) {
                 ZStack {
                     Circle()
-                        .fill(RadialGradient(colors: [Color.white.opacity(0.2), .clear], center: .center, startRadius: 50, endRadius: 90))
-                        .frame(width: 90, height: 90)
+                        .fill(RadialGradient(colors: [Color.white.opacity(0.2), .clear], center: .center, startRadius: 40, endRadius: 70))
+                        .frame(width: 70, height: 70)
                     
                     Circle()
                         .stroke(LinearGradient(colors: [.white.opacity(0.5), .blue.opacity(0.5)], startPoint: .top, endPoint: .bottom), lineWidth: 2)
-                        .frame(width: 84, height: 84)
+                        .frame(width: 60, height: 60)
 
                     Circle()
                         .fill(LinearGradient(colors: [Color(hex: "7D7AFF").opacity(0.8), Color(hex: "5E5CE6").opacity(0.8)], startPoint: .topLeading, endPoint: .bottomTrailing))
-                        .frame(width: 72, height: 72)
+                        .frame(width: 50, height: 50)
                         .shadow(radius: 5)
                     
                     Text(loc.currentLanguage == .chinese ? "清理" : "Clean")
-                        .font(.system(size: 16, weight: .medium))
+                        .font(.system(size: 13, weight: .medium))
                         .foregroundColor(.white)
                 }
             }
@@ -508,21 +509,21 @@ struct JunkCleanerView: View {
                              // Glow
                              Circle()
                                  .fill(Color(hex: "7D7AFF").opacity(0.4))
-                                 .frame(width: 80, height: 80)
+                                 .frame(width: 60, height: 60)
                                  .blur(radius: 10)
                              
                              // Border
                              Circle()
                                  .stroke(LinearGradient(colors: [.white.opacity(0.8), .white.opacity(0.2)], startPoint: .top, endPoint: .bottom), lineWidth: 2)
-                                 .frame(width: 76, height: 76)
+                                 .frame(width: 56, height: 56)
                              
                              // Fill
                              Circle()
                                  .fill(LinearGradient(colors: [Color(hex: "7D7AFF"), Color(hex: "5E5CE6")], startPoint: .topLeading, endPoint: .bottomTrailing))
-                                 .frame(width: 70, height: 70)
+                                 .frame(width: 50, height: 50)
                              
                              Text(loc.currentLanguage == .chinese ? "清理" : "Clean")
-                                 .font(.system(size: 15, weight: .semibold))
+                                 .font(.system(size: 12, weight: .semibold))
                                  .foregroundColor(.white)
                          }
                      }

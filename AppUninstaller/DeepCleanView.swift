@@ -52,15 +52,15 @@ struct DeepCleanView: View {
                                     startPoint: .top,
                                     endPoint: .bottom
                                 ), lineWidth: 2)
-                                .frame(width: 84, height: 84)
+                                .frame(width: 60, height: 60)
                             
                             Circle()
                                 .fill(Color.white.opacity(0.2))
-                                .frame(width: 74, height: 74)
+                                .frame(width: 50, height: 50)
                                 .shadow(color: Color.black.opacity(0.3), radius: 10, y: 5)
                             
                             Text(loc.currentLanguage == .chinese ? "扫描" : "Scan")
-                                .font(.system(size: 16, weight: .medium))
+                                .font(.system(size: 13, weight: .medium))
                                 .foregroundColor(.white)
                         }
                     }
@@ -247,18 +247,47 @@ struct DeepCleanView: View {
             
             Spacer()
             
-            // Progress
-            CircularActionButton(
-                title: loc.currentLanguage == .chinese ? "停止" : "Stop",
-                gradient: CircularActionButton.stopGradient,
-                progress: scanner.scanProgress,
-                showProgress: true,
-                scanSize: ByteCountFormatter.string(fromByteCount: scanner.totalSize, countStyle: .file),
-                action: {
+            // Progress (Standardized Stop Button)
+            HStack(spacing: 20) {
+                Button(action: {
                     scanner.stopScan()
                     viewState = .initial
+                }) {
+                    ZStack {
+                         // Outer
+                        Circle()
+                            .stroke(Color.white.opacity(0.1), lineWidth: 3)
+                            .frame(width: 60, height: 60)
+                        
+                        // Ring
+                        Circle()
+                            .trim(from: 0, to: max(0.01, scanner.scanProgress))
+                            .stroke(
+                                LinearGradient(colors: [.white, .white.opacity(0.5)], startPoint: .top, endPoint: .trailing),
+                                style: StrokeStyle(lineWidth: 3, lineCap: .round)
+                            )
+                            .frame(width: 60, height: 60)
+                            .rotationEffect(Angle(degrees: -90))
+                            .animation(.linear(duration: 0.2), value: scanner.scanProgress)
+                        
+                        // Inner
+                        Circle()
+                            .fill(Color.white.opacity(0.1))
+                            .frame(width: 48, height: 48)
+                        
+                        Text(loc.currentLanguage == .chinese ? "停止" : "Stop")
+                            .font(.system(size: 11))
+                            .foregroundColor(.white)
+                    }
                 }
-            )
+                .buttonStyle(.plain)
+                
+                // Real-time Size
+                Text(ByteCountFormatter.string(fromByteCount: scanner.totalSize, countStyle: .file))
+                    .font(.system(size: 24, weight: .light))
+                    .foregroundColor(.white)
+                    .shadow(color: Color.black.opacity(0.2), radius: 2, y: 1)
+            }
             .padding(.bottom, 20)
             
             // Current scanning path

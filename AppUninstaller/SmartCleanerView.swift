@@ -1205,7 +1205,7 @@ struct SmartCleanerView: View {
                             ),
                             lineWidth: 1
                         )
-                        .frame(width: 128, height: 128)
+                        .frame(width: 74, height: 74) // Outer ring for 60x60 button
                     
                     // Main Orb Body
                     ZStack {
@@ -1238,11 +1238,11 @@ struct SmartCleanerView: View {
                         
                         // Text
                         Text(loc.currentLanguage == .chinese ? "扫描" : "Scan")
-                            .font(.system(size: 22, weight: .semibold, design: .rounded))
+                            .font(.system(size: 14, weight: .semibold, design: .rounded))
                             .foregroundColor(.white)
                             .shadow(color: .black.opacity(0.2), radius: 2, x: 0, y: 1)
                     }
-                    .frame(width: 100, height: 100)
+                    .frame(width: 60, height: 60)
                     .overlay(
                         // Sharp Glassy Rim
                         Circle()
@@ -1263,29 +1263,31 @@ struct SmartCleanerView: View {
         case .scanning:
             // New Stop Button with Rotating Ring and Real-time Size
             // New Stop Button with Rotating Ring and Real-time Size
-            VStack(spacing: 20) {
+            // New Stop Button with Real Progress Ring and Side Text
+            HStack(spacing: 20) {
                 // Stop Button Group
                 Button(action: { service.stopScanning() }) {
                     ZStack {
-                        // 1. Outer Progress Ring Track (Faint)
+                        // 1. Outer Track (Background Ring)
                         Circle()
-                            .stroke(Color.white.opacity(0.1), lineWidth: 4)
-                            .frame(width: 84, height: 84)
+                            .stroke(Color.white.opacity(0.1), lineWidth: 3)
+                            .frame(width: 60, height: 60)
                         
-                        // 2. Rotating Progress Indicator (Gradient Arc)
+                        // 2. Progress Indicator (Determinate Ring)
+                        // Use service.scanProgress (0.0 to 1.0)
                         Circle()
-                            .trim(from: 0, to: 0.25) // A quarter circle arc
+                            .trim(from: 0, to: max(0.01, service.scanProgress)) // Ensure at least a tiny dot is visible
                             .stroke(
                                 LinearGradient(
-                                    colors: [.white, .white.opacity(0)],
+                                    colors: [.white, .white.opacity(0.5)],
                                     startPoint: .top,
                                     endPoint: .trailing
                                 ),
-                                style: StrokeStyle(lineWidth: 4, lineCap: .round)
+                                style: StrokeStyle(lineWidth: 3, lineCap: .round)
                             )
-                            .frame(width: 84, height: 84)
+                            .frame(width: 60, height: 60)
                             .rotationEffect(Angle(degrees: -90)) // Start from top
-                            .modifier(SpinningAnimationModifier()) // Continuous rotation
+                            .animation(.linear(duration: 0.2), value: service.scanProgress) // Smooth progress updates
                         
                         // 3. Inner Button Background (Glassy)
                         Circle()
@@ -1299,27 +1301,27 @@ struct SmartCleanerView: View {
                                     endPoint: .bottomTrailing
                                 )
                             )
-                            .frame(width: 68, height: 68) // Slightly smaller than ring
+                            .frame(width: 48, height: 48)
                             .shadow(color: Color.black.opacity(0.3), radius: 5, x: 0, y: 3)
                             .overlay(
                                 Circle()
                                     .stroke(Color.white.opacity(0.1), lineWidth: 1)
                             )
-                            
-                        // 4. "Stop" Text or Icon
-                        VStack(spacing: 2) {
-                            // Can switch to a square icon if preferred, but text is clearer
-                            Text(loc.currentLanguage == .chinese ? "停止" : "Stop")
-                                .font(.system(size: 14, weight: .semibold))
-                                .foregroundColor(.white)
-                        }
+                        
+                        // 4. "Stop" Icon/Text
+                        // Design shows a simple Stop square or text. Let's use text as before for clarity, or icon.
+                        // User mentioned "Stop button" but design screenshot 3 shows "停止" text inside.
+                        // 4. "Stop" Icon/Text
+                        Text(loc.currentLanguage == .chinese ? "停止" : "Stop")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundColor(.white)
                     }
                 }
                 .buttonStyle(.plain)
                 
-                // Real-time Size Display (Moved below the button for cleaner look)
+                // Real-time Size Display (displayed to the right)
                 Text(ByteCountFormatter.string(fromByteCount: totalScannedSize, countStyle: .file))
-                    .font(.system(size: 24, weight: .light)) // Larger, cleaner font
+                    .font(.system(size: 24, weight: .light))
                     .foregroundColor(.white)
                     .shadow(color: Color.black.opacity(0.2), radius: 2, y: 1)
             }
@@ -1352,8 +1354,7 @@ struct SmartCleanerView: View {
             .buttonStyle(.plain)
             
         case .completed:
-            // Run Orb (Updated text)
-            // Run Button (Simple Blue Button - No Glow/Orb)
+            // Run Orb (Updated to match design: Cyan Ring + Purple Fill)
             Button(action: {
                 // Check for running apps
                 let selectedFiles = service.getAllSelectedFiles()
@@ -1367,24 +1368,68 @@ struct SmartCleanerView: View {
                 }
             }) {
                 ZStack {
-                    // Simple Circular Button with Gradient
+                    // 1. Outer Diffused Glow (Purple/Blue aura)
                     Circle()
-                        .fill(LinearGradient(
-                            colors: [Color(red: 0.2, green: 0.5, blue: 0.9), Color(red: 0.1, green: 0.3, blue: 0.7)],
-                            startPoint: .top,
-                            endPoint: .bottom
-                        ))
-                        .frame(width: 80, height: 80)
-                        .shadow(color: Color.blue.opacity(0.4), radius: 10, x: 0, y: 5)
-                        .overlay(
-                            Circle()
-                                .strokeBorder(Color.white.opacity(0.2), lineWidth: 1)
-                        )
+                        .fill(Color(red: 0.6, green: 0.2, blue: 0.8).opacity(0.3)) // Purple aura
+                        .frame(width: 140, height: 140)
+                        .blur(radius: 20)
                     
+                    // 2. Main Glow Ring (Cyan/Blue - Behind border to create glow effect)
+                    Circle()
+                        .stroke(Color(red: 0.0, green: 0.8, blue: 1.0).opacity(0.5), lineWidth: 4)
+                        .frame(width: 112, height: 112)
+                        .blur(radius: 8) // Soft glow
+                    
+                    // 3. Button Body (Translucent Purple/Blue Gradient)
+                    Circle()
+                        .fill(
+                            LinearGradient(
+                                colors: [
+                                    Color(red: 0.5, green: 0.35, blue: 0.65).opacity(0.8), // Top: Muted Purple
+                                    Color(red: 0.35, green: 0.25, blue: 0.55).opacity(0.9)  // Bottom: Darker
+                                ],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            )
+                        )
+                        .frame(width: 110, height: 110)
+                        .shadow(color: Color.black.opacity(0.3), radius: 6, x: 0, y: 3)
+                    
+                    // 4. Cyan Border Ring (Sharp)
+                    Circle()
+                        .stroke(
+                            LinearGradient(
+                                colors: [
+                                    Color(red: 0.2, green: 0.9, blue: 1.0), // Bright Cyan
+                                    Color(red: 0.0, green: 0.6, blue: 0.9)  // Strong Blue
+                                ],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            ),
+                            lineWidth: 3.5
+                        )
+                        .frame(width: 60, height: 60)
+                    
+                    // 5. Inner Highlight (Glassy top reflection)
+                    Circle()
+                        .stroke(
+                            LinearGradient(
+                                colors: [.white.opacity(0.4), .clear],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            ),
+                            lineWidth: 1
+                        )
+                        .frame(width: 56, height: 56)
+                        .blur(radius: 0.5)
+
+                    // 6. Text
                     Text(loc.currentLanguage == .chinese ? "运行" : "Run")
-                        .font(.system(size: 16, weight: .semibold))
+                        .font(.system(size: 16, weight: .medium, design: .rounded))
                         .foregroundColor(.white)
+                        .shadow(color: Color.black.opacity(0.2), radius: 2, y: 1)
                 }
+                .contentShape(Circle())
             }
             .buttonStyle(.plain)
             
